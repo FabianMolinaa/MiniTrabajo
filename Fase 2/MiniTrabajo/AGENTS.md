@@ -70,4 +70,4 @@ MiniTrabajo/
 └── tsconfig.json
 ```
 
-> Nota: las carpetas `.expo/`, `node_modules/` y las generadas por Expo (**/ios, /android**) aparecen de forma local pero **no existen en el repositorio remoto**. Al clonar, se obtienen a través de `npm install` o se generan automáticamente al ejecutar el proyecto.
+> Nota: las carpetas `.expo/`, `node_modules/` y las generadas por Expo (**/ios, /android**) aparecen de forma local pero **no existen en el repositorio remoto**. Al clonar, se obtienen a través de `npm install` (dentro de la carpeta del proyecto) o se generan automáticamente al ejecutar el proyecto.
