@@ -8,6 +8,7 @@ import {
   FlatList,
   Pressable,
   Animated,
+  ActivityIndicator,
 } from "react-native";
 import {
   NavigationContainer,
@@ -21,9 +22,12 @@ import {
 } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { StatusBar } from "expo-status-bar";
+import { Session } from "@supabase/supabase-js";
 
 import { colors } from "./src/theme/colors";
+import { supabase } from "./src/services/supabase";
 
+import AuthScreen from "./src/screens/AuthScreen";
 import TrabajosScreen from "./src/screens/TrabajosScreen";
 import PublicarScreen from "./src/screens/PublicarScreen";
 import PerfilScreen from "./src/screens/PerfilScreen";
@@ -303,17 +307,52 @@ function Navigation() {
 }
 
 export default function App() {
+  const [session, setSession] = useState<Session | null>(null);
+  const [cargandoSesion, setCargandoSesion] = useState(true);
+
+  // Escuchar sesión persistente de Supabase
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setCargandoSesion(false);
+    });
+
+    const { data: authListener } = supabase.auth.onAuthStateChange(
+      (_event, session) => {
+        setSession(session);
+      },
+    );
+
+    return () => {
+      authListener.subscription.unsubscribe();
+    };
+  }, []);
+
+  if (cargandoSesion) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={colors.accentBlue} />
+      </View>
+    );
+  }
+
   return (
     <SafeAreaProvider>
       <StatusBar style="light" />
       <NavigationContainer theme={MyDarkTheme}>
-        <Navigation />
+        {session && session.user ? <Navigation /> : <AuthScreen />}
       </NavigationContainer>
     </SafeAreaProvider>
   );
 }
 
 const styles = StyleSheet.create({
+  loadingContainer: {
+    flex: 1,
+    backgroundColor: colors.background,
+    justifyContent: "center",
+    alignItems: "center",
+  },
   headerLeftContainer: {
     flexDirection: "row",
     alignItems: "center",

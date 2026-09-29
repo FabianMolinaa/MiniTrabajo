@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { supabase } from '../services/supabase';
 import {
   StyleSheet,
   Text,
@@ -208,6 +209,13 @@ export default function PerfilScreen() {
     setCreditosActuales(nuevoTotal);
     setModalVisible("ninguno");
     Alert.alert("¡Compra simulada!", `Añadiste ${pack.creditos} créditos. Tu nuevo saldo es ${nuevoTotal}.`);
+  };
+
+  const handleCerrarSesion = async () => {
+    const { error } = await supabase.auth.signOut();
+    if (error) {
+      Alert.alert("Error", "No se pudo cerrar sesión: " + error.message);
+    }
   };
 
   const handleAceptarPostulante = (tareaId: string, postulanteId: string) => {
@@ -447,7 +455,10 @@ export default function PerfilScreen() {
         </View>
 
         {/* CERRAR SESIÓN */}
-        <TouchableOpacity activeOpacity={0.8} style={styles.logoutButton}>
+        <TouchableOpacity 
+        activeOpacity={0.8} 
+        style={styles.logoutButton}
+        onPress={handleCerrarSesion}>
           <Ionicons name="log-out-outline" size={18} color="#ef4444" />
           <Text style={styles.logoutText}>Cerrar sesión</Text>
         </TouchableOpacity>

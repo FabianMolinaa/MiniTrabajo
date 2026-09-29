@@ -1,8 +1,14 @@
 # Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
 #React Native
+
 # dependencies
 node_modules/
 @@@
+
+# Variables de entorno y secretos
+.env
+.env*.local
+
 # Expo
 .expo/
 dist/
