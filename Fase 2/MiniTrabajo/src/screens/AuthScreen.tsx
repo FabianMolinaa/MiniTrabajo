@@ -16,9 +16,15 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../services/supabase';
 import { colors } from '../theme/colors';
-import { limpiarRut, validarRutChileno, formatearRutFinal } from '../utils/validarRut';
-import { estandarizarTelefonoChileno, validarTelefonoChileno } from '../utils/validarTelefono';
-import { validarPassword, ResultadoPassword } from '../utils/validarPassword';
+import {
+  limpiarRut,
+  validarRutChileno,
+  formatearRutFinal,
+  estandarizarTelefonoChileno,
+  validarTelefonoChileno,
+  validarPassword,
+  ResultadoPassword,
+} from '../utils/functionsAuth';
 
 interface ErroresCampos {
   nombre?: string;
