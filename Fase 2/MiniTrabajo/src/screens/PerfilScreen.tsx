@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { supabase } from '../services/supabase';
 import {
   StyleSheet,
@@ -12,9 +12,32 @@ import {
   Alert,
   Linking,
   Image,
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
+  FlatList,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import * as ImagePicker from 'expo-image-picker';
+import { decode } from 'base64-arraybuffer';
 import { colors } from "../theme/colors";
+
+const COMUNAS_DISPONIBLES = [
+  'Santiago Centro',
+  'Providencia',
+  'Las Condes',
+  'Ñuñoa',
+  'Estación Central',
+  'Maipú',
+  'La Florida',
+  'San Miguel',
+  'Macul',
+  'Peñalolén',
+  'Pudahuel',
+  'Quilicura',
+  'Recoleta',
+  'Independencia',
+];
 
 interface Resena {
   id: string;
@@ -56,19 +79,6 @@ interface MiPublicacion {
   postulantes: Postulante[];
   imagenes?: string[];
 }
-
-const USUARIO_MOCK = {
-  nombre: "Carlos Mendoza",
-  correo: "carlos.mendoza@email.cl",
-  comuna: "Santiago Centro",
-  calificacion: "4.9",
-  totalResenas: 28,
-  trabajosRealizados: 34,
-  creditos: 10,
-  verificado: true,
-  sobreMi:
-    "Especialista en armado y reparación de muebles de hogar. Cuento con herramientas propias y disponibilidad tardes y fines de semana.",
-};
 
 const PAQUETES_CREDITOS = [
   { id: "1", creditos: 10, precio: "$2.990", destacado: false, desc: "Ideal para destacar 2 publicaciones" },
@@ -187,6 +197,26 @@ export default function PerfilScreen() {
   const [creditosActuales, setCreditosActuales] = useState(10);
   const [misPublicaciones, setMisPublicaciones] = useState<MiPublicacion[]>(MIS_PUBLICACIONES_INICIALES);
 
+  // Estados reales del perfil del usuario (Supabase)
+  const [usuarioId, setUsuarioId] = useState<string | null>(null);
+  const [nombre, setNombre] = useState('Cargando...');
+  const [correo, setCorreo] = useState('');
+  const [comuna, setComuna] = useState('Santiago Centro');
+  const [sobreMi, setSobreMi] = useState('Sin descripción aún.');
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [cargandoPerfil, setCargandoPerfil] = useState(true);
+
+  // Estados del modal de edición
+  const [modalEditarVisible, setModalEditarVisible] = useState(false);
+  const [modalComunasVisible, setModalComunasVisible] = useState(false);
+  const [guardandoCambios, setGuardandoCambios] = useState(false);
+  const [tempNombre, setTempNombre] = useState('');
+  const [tempComuna, setTempComuna] = useState('Santiago Centro');
+  const [tempSobreMi, setTempSobreMi] = useState('');
+  const [tempAvatarUri, setTempAvatarUri] = useState<string | null>(null);
+  const [tempAvatarBase64, setTempAvatarBase64] = useState<string | null>(null);
+
+  // Modales existentes
   const [modalVisible, setModalVisible] = useState<
     "ninguno" | "resenas" | "historial" | "publicaciones" | "creditos"
   >("ninguno");
@@ -200,8 +230,154 @@ export default function PerfilScreen() {
   const [estrellasCalificacion, setEstrellasCalificacion] = useState(5);
   const [comentarioCalificacion, setComentarioCalificacion] = useState("");
 
-  const handleEditarPerfil = () => {
-    Alert.alert("Editar Perfil", "Próximamente: formulario para actualizar foto, datos y biografía.");
+  const cargarPerfil = async () => {
+    try {
+      setCargandoPerfil(true);
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      setUsuarioId(user.id);
+      setCorreo(user.email || '');
+
+      const { data, error } = await supabase
+        .from('perfiles')
+        .select('*')
+        .eq('id', user.id)
+        .single();
+
+      if (!error && data) {
+        setNombre(data.nombre || user.user_metadata?.nombre || 'Usuario');
+        setComuna(data.comuna || 'Santiago Centro');
+        setSobreMi(data.sobre_mi || data.descripcion || 'Sin descripción aún.');
+        setAvatarUrl(data.avatar_url && data.avatar_url.trim().length > 0 ? data.avatar_url : null);
+      } else {
+        setNombre(user.user_metadata?.nombre || 'Usuario');
+      }
+    } catch (e) {
+      console.log('Error al cargar perfil:', e);
+    } finally {
+      setCargandoPerfil(false);
+    }
+  };
+
+  useEffect(() => {
+    cargarPerfil();
+  }, []);
+
+  const handleAbrirEditar = () => {
+    setTempNombre(nombre);
+    setTempComuna(comuna || 'Santiago Centro');
+    setTempSobreMi(sobreMi === 'Sin descripción aún.' ? '' : sobreMi);
+    setTempAvatarUri(avatarUrl);
+    setTempAvatarBase64(null);
+    setModalEditarVisible(true);
+  };
+
+  const handleSeleccionarFoto = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permiso denegado', 'Se requiere acceso a la galería para cambiar tu foto de perfil.');
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.6,
+      base64: true,
+    });
+
+    if (!result.canceled && result.assets[0].uri) {
+      setTempAvatarUri(result.assets[0].uri);
+      if (result.assets[0].base64) {
+        setTempAvatarBase64(result.assets[0].base64);
+      }
+    }
+  };
+
+  const subirAvatarStorage = async (base64Data: string, userId: string): Promise<string | null> => {
+    try {
+      const fileName = `${userId}-${Date.now()}.jpg`;
+      const { error: uploadError } = await supabase.storage
+        .from('avatars')
+        .upload(fileName, decode(base64Data), {
+          contentType: 'image/jpeg',
+          upsert: true,
+        });
+
+      if (uploadError) {
+        console.error('Error al subir avatar:', uploadError);
+        return null;
+      }
+
+      const { data } = supabase.storage
+        .from('avatars')
+        .getPublicUrl(fileName);
+
+      return data.publicUrl;
+    } catch (err) {
+      console.error('Error al procesar subida:', err);
+      return null;
+    }
+  };
+
+  const handleGuardarPerfil = async () => {
+    if (!tempNombre.trim()) {
+      Alert.alert('Atención', 'El nombre no puede estar vacío.');
+      return;
+    }
+
+    if (!usuarioId) return;
+
+    setGuardandoCambios(true);
+
+    try {
+      let finalAvatarUrl = avatarUrl;
+
+      if (tempAvatarBase64) {
+        const urlPublica = await subirAvatarStorage(tempAvatarBase64, usuarioId);
+        if (urlPublica) {
+          finalAvatarUrl = urlPublica;
+        }
+      }
+
+      const updates = {
+        nombre: tempNombre.trim(),
+        comuna: tempComuna,
+        sobre_mi: tempSobreMi.trim(),
+        avatar_url: finalAvatarUrl || '',
+      };
+
+      const { error } = await supabase
+        .from('perfiles')
+        .update(updates)
+        .eq('id', usuarioId);
+
+      if (error) {
+        await supabase
+          .from('perfiles')
+          .update({
+            nombre: tempNombre.trim(),
+            comuna: tempComuna,
+            descripcion: tempSobreMi.trim(),
+            avatar_url: finalAvatarUrl || '',
+          })
+          .eq('id', usuarioId);
+      }
+
+      setNombre(tempNombre.trim());
+      setComuna(tempComuna);
+      setSobreMi(tempSobreMi.trim() || 'Sin descripción aún.');
+      setAvatarUrl(finalAvatarUrl);
+      setModalEditarVisible(false);
+
+      Alert.alert('¡Éxito!', 'Tu perfil ha sido actualizado correctamente.');
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'No se pudo conectar con el servidor.');
+    } finally {
+      setGuardandoCambios(false);
+    }
   };
 
   const handleComprarPaquete = (pack: (typeof PAQUETES_CREDITOS)[0]) => {
@@ -283,7 +459,6 @@ export default function PerfilScreen() {
     }
   };
 
-  // 1. Cancelar asignación actual (revierte la tarea a abierta)
   const handleCancelarAcuerdo = (tareaId: string) => {
     Alert.alert(
       "Cancelar asignación",
@@ -315,7 +490,6 @@ export default function PerfilScreen() {
     );
   };
 
-  // 2. Cancelar/Eliminar publicación completa
   const handleEliminarPublicacion = (tareaId: string) => {
     Alert.alert(
       "Eliminar publicación",
@@ -378,7 +552,7 @@ export default function PerfilScreen() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
       >
-        {/* CABECERA PRINCIPAL */}
+        {/* CABECERA PRINCIPAL CON FOTO Y DATOS REALES */}
         <View style={styles.userCard}>
           <TouchableOpacity
             activeOpacity={0.8}
@@ -390,26 +564,34 @@ export default function PerfilScreen() {
           </TouchableOpacity>
 
           <View style={styles.avatarWrap}>
-            <Ionicons name="person" size={38} color={colors.textPrimary} />
-            {USUARIO_MOCK.verificado && (
-              <View style={styles.verifiedBadge}>
-                <Ionicons name="checkmark-circle" size={18} color={colors.accentBlue} />
-              </View>
+            {avatarUrl && avatarUrl.trim().length > 0 ? (
+              <Image source={{ uri: avatarUrl }} style={styles.avatarImage} />
+            ) : (
+              <Ionicons name="person" size={38} color={colors.textPrimary} />
             )}
+            <View style={styles.verifiedBadge}>
+              <Ionicons name="checkmark-circle" size={18} color={colors.accentBlue} />
+            </View>
           </View>
 
           <View style={styles.nameRow}>
-            <Text style={styles.userName}>{USUARIO_MOCK.nombre}</Text>
-            <TouchableOpacity activeOpacity={0.7} style={styles.editNameButton} onPress={handleEditarPerfil}>
-              <Ionicons name="pencil" size={14} color={colors.textSecondary} />
-            </TouchableOpacity>
+            {cargandoPerfil ? (
+              <ActivityIndicator size="small" color={colors.accentBlue} />
+            ) : (
+              <>
+                <Text style={styles.userName}>{nombre}</Text>
+                <TouchableOpacity activeOpacity={0.7} style={styles.editNameButton} onPress={handleAbrirEditar}>
+                  <Ionicons name="pencil" size={14} color={colors.textSecondary} />
+                </TouchableOpacity>
+              </>
+            )}
           </View>
 
-          <Text style={styles.userEmail}>{USUARIO_MOCK.correo}</Text>
+          <Text style={styles.userEmail}>{correo}</Text>
 
           <View style={styles.locationRow}>
             <Ionicons name="location-sharp" size={13} color={colors.textSecondary} />
-            <Text style={styles.locationText}>{USUARIO_MOCK.comuna}</Text>
+            <Text style={styles.locationText}>{comuna}</Text>
           </View>
         </View>
 
@@ -418,9 +600,9 @@ export default function PerfilScreen() {
           <TouchableOpacity style={styles.statBox} activeOpacity={0.7} onPress={() => setModalVisible("resenas")}>
             <View style={styles.ratingRow}>
               <Ionicons name="star" size={16} color="#eab308" />
-              <Text style={styles.statValue}>{USUARIO_MOCK.calificacion}</Text>
+              <Text style={styles.statValue}>5.0</Text>
             </View>
-            <Text style={styles.statLabel}>{USUARIO_MOCK.totalResenas} reseñas</Text>
+            <Text style={styles.statLabel}>{RESENAS_RECIBIDAS.length} reseñas</Text>
             <Ionicons name="chevron-forward" size={12} color={colors.textMuted} style={styles.statChevron} />
           </TouchableOpacity>
 
@@ -429,7 +611,7 @@ export default function PerfilScreen() {
             activeOpacity={0.7}
             onPress={() => setModalVisible("historial")}
           >
-            <Text style={styles.statValue}>{USUARIO_MOCK.trabajosRealizados}</Text>
+            <Text style={styles.statValue}>{HISTORIAL_TRABAJOS.length}</Text>
             <Text style={styles.statLabel}>Trabajos hechos</Text>
             <Ionicons name="chevron-forward" size={12} color={colors.textMuted} style={styles.statChevron} />
           </TouchableOpacity>
@@ -451,18 +633,168 @@ export default function PerfilScreen() {
             <Ionicons name="information-circle-outline" size={16} color={colors.accentBlue} />
             <Text style={styles.aboutTitle}>Sobre mí</Text>
           </View>
-          <Text style={styles.aboutText}>{USUARIO_MOCK.sobreMi}</Text>
+          <Text style={styles.aboutText}>{sobreMi}</Text>
         </View>
 
         {/* CERRAR SESIÓN */}
         <TouchableOpacity 
-        activeOpacity={0.8} 
-        style={styles.logoutButton}
-        onPress={handleCerrarSesion}>
+          activeOpacity={0.8} 
+          style={styles.logoutButton}
+          onPress={handleCerrarSesion}
+        >
           <Ionicons name="log-out-outline" size={18} color="#ef4444" />
           <Text style={styles.logoutText}>Cerrar sesión</Text>
         </TouchableOpacity>
       </ScrollView>
+
+      {/* MODAL: EDITAR PERFIL */}
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={modalEditarVisible}
+        onRequestClose={() => setModalEditarVisible(false)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.modalOverlay}
+        >
+          <Pressable style={styles.modalOverlay} onPress={() => setModalEditarVisible(false)}>
+            <Pressable style={styles.modalSheet} onPress={(e) => e.stopPropagation()}>
+              <View style={styles.sheetHeader}>
+                <View style={styles.sheetTitleRow}>
+                  <Ionicons name="pencil" size={18} color={colors.accentBlue} />
+                  <Text style={styles.sheetTitle}>Editar Perfil</Text>
+                </View>
+                <TouchableOpacity onPress={() => setModalEditarVisible(false)}>
+                  <Ionicons name="close" size={24} color={colors.textPrimary} />
+                </TouchableOpacity>
+              </View>
+
+              <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 20 }}>
+                {/* Selector de Foto */}
+                <View style={styles.editAvatarSection}>
+                  <TouchableOpacity activeOpacity={0.8} style={styles.editAvatarWrap} onPress={handleSeleccionarFoto}>
+                    {tempAvatarUri && tempAvatarUri.trim().length > 0 ? (
+                      <Image source={{ uri: tempAvatarUri }} style={styles.editAvatarImage} />
+                    ) : (
+                      <Ionicons name="person" size={40} color={colors.textMuted} />
+                    )}
+                    <View style={styles.cameraIconBadge}>
+                      <Ionicons name="camera" size={14} color="#ffffff" />
+                    </View>
+                  </TouchableOpacity>
+                  <Text style={styles.editAvatarHint}>Toca para cambiar tu foto</Text>
+                </View>
+
+                {/* Nombre */}
+                <Text style={styles.inputLabel}>Nombre completo</Text>
+                <View style={styles.inputBox}>
+                  <TextInput
+                    style={styles.inputField}
+                    value={tempNombre}
+                    onChangeText={setTempNombre}
+                    placeholder="Tu nombre"
+                    placeholderTextColor={colors.textMuted}
+                  />
+                </View>
+
+                {/* Selector de Comuna */}
+                <Text style={styles.inputLabel}>Ubicación general (Comuna)</Text>
+                <TouchableOpacity
+                  style={styles.dropdownSelectorBtn}
+                  activeOpacity={0.8}
+                  onPress={() => setModalComunasVisible(true)}
+                >
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <Ionicons name="location-outline" size={18} color={colors.accentBlue} />
+                    <Text style={styles.dropdownSelectorText}>{tempComuna}</Text>
+                  </View>
+                  <Ionicons name="chevron-down" size={18} color={colors.textMuted} />
+                </TouchableOpacity>
+
+                {/* Descripción / Sobre Mí */}
+                <Text style={styles.inputLabel}>Descripción breve (Sobre mí)</Text>
+                <View style={[styles.inputBox, styles.inputBoxArea]}>
+                  <TextInput
+                    style={[styles.inputField, styles.inputFieldArea]}
+                    multiline
+                    numberOfLines={4}
+                    value={tempSobreMi}
+                    onChangeText={setTempSobreMi}
+                    placeholder="Cuéntale a otros qué servicios ofreces, tu experiencia o herramientas..."
+                    placeholderTextColor={colors.textMuted}
+                    textAlignVertical="top"
+                  />
+                </View>
+
+                {/* Botones de acción */}
+                <View style={styles.editButtonsRow}>
+                  <TouchableOpacity
+                    style={styles.cancelBtn}
+                    onPress={() => setModalEditarVisible(false)}
+                  >
+                    <Text style={styles.cancelBtnText}>Cancelar</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.saveBtn}
+                    onPress={handleGuardarPerfil}
+                    disabled={guardandoCambios}
+                  >
+                    {guardandoCambios ? (
+                      <ActivityIndicator size="small" color="#ffffff" />
+                    ) : (
+                      <Text style={styles.saveBtnText}>Guardar cambios</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </ScrollView>
+            </Pressable>
+          </Pressable>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* SUB-MODAL SELECTOR DE COMUNA */}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={modalComunasVisible}
+        onRequestClose={() => setModalComunasVisible(false)}
+      >
+        <Pressable style={styles.subModalOverlay} onPress={() => setModalComunasVisible(false)}>
+          <Pressable style={styles.dropdownModalBox} onPress={(e) => e.stopPropagation()}>
+            <View style={styles.sheetHeader}>
+              <Text style={styles.sheetTitle}>Selecciona tu Comuna</Text>
+              <TouchableOpacity onPress={() => setModalComunasVisible(false)}>
+                <Ionicons name="close" size={22} color={colors.textPrimary} />
+              </TouchableOpacity>
+            </View>
+
+            <FlatList
+              data={COMUNAS_DISPONIBLES}
+              keyExtractor={(item) => item}
+              showsVerticalScrollIndicator={false}
+              renderItem={({ item }) => {
+                const isSelected = tempComuna === item;
+                return (
+                  <TouchableOpacity
+                    style={[styles.comunaItem, isSelected && styles.comunaItemActive]}
+                    onPress={() => {
+                      setTempComuna(item);
+                      setModalComunasVisible(false);
+                    }}
+                  >
+                    <Text style={[styles.comunaItemText, isSelected && styles.comunaItemTextActive]}>
+                      {item}
+                    </Text>
+                    {isSelected && <Ionicons name="checkmark" size={18} color={colors.accentBlue} />}
+                  </TouchableOpacity>
+                );
+              }}
+            />
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       {/* MODAL: RESEÑAS */}
       <Modal
@@ -702,7 +1034,6 @@ export default function PerfilScreen() {
                   </TouchableOpacity>
                 </View>
 
-                {/* Miniaturas de fotos si la tarea las tiene */}
                 {tareaPostulantes.imagenes && tareaPostulantes.imagenes.length > 0 && (
                   <View style={styles.postulantesImagesContainer}>
                     <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.miniPhotoRow}>
@@ -715,7 +1046,6 @@ export default function PerfilScreen() {
                   </View>
                 )}
 
-                {/* BOTONES DE GESTIÓN SEGÚN EL ESTADO */}
                 {tareaPostulantes.estado === "en_progreso" && (
                   <View style={styles.managementActionsRow}>
                     <TouchableOpacity
@@ -837,7 +1167,7 @@ export default function PerfilScreen() {
         </Pressable>
       </Modal>
 
-      {/* MODAL: PERFIL DEL POSTULANTE CON TABS */}
+      {/* MODAL: PERFIL DEL POSTULANTE */}
       <Modal
         animationType="fade"
         transparent={true}
@@ -871,7 +1201,6 @@ export default function PerfilScreen() {
                   </Text>
                 </View>
 
-                {/* TABS DENTRO DEL POSTULANTE */}
                 <View style={styles.miniTabBar}>
                   <TouchableOpacity
                     activeOpacity={0.7}
@@ -1145,9 +1474,9 @@ const styles = StyleSheet.create({
   },
   creditsPillText: { color: "#eab308", fontSize: 11, fontWeight: "700" },
   avatarWrap: {
-    width: 70,
-    height: 70,
-    borderRadius: 35,
+    width: 76,
+    height: 76,
+    borderRadius: 38,
     backgroundColor: colors.surfaceLight,
     alignItems: "center",
     justifyContent: "center",
@@ -1155,6 +1484,12 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     marginBottom: 8,
     marginTop: 4,
+    overflow: "hidden",
+  },
+  avatarImage: {
+    width: 76,
+    height: 76,
+    borderRadius: 38,
   },
   verifiedBadge: {
     position: "absolute",
@@ -1168,6 +1503,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: 8,
+    minHeight: 28,
   },
   userName: { fontSize: 18, fontWeight: "700", color: colors.textPrimary },
   editNameButton: {
@@ -1267,6 +1603,162 @@ const styles = StyleSheet.create({
   sheetTitleRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   sheetTitle: { fontSize: 17, fontWeight: "700", color: colors.textPrimary },
   sheetSub: { fontSize: 12, color: colors.textSecondary },
+
+  editAvatarSection: {
+    alignItems: "center",
+    marginVertical: 12,
+  },
+  editAvatarWrap: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: colors.surfaceLight,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: colors.accentBlue,
+    position: "relative",
+    overflow: "hidden",
+  },
+  editAvatarImage: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+  },
+  cameraIconBadge: {
+    position: "absolute",
+    bottom: 0,
+    right: 0,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: colors.accentBlue,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 2,
+    borderColor: colors.surface,
+  },
+  editAvatarHint: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    marginTop: 6,
+  },
+  inputLabel: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: colors.textSecondary,
+    marginBottom: 6,
+    marginTop: 8,
+  },
+  inputBox: {
+    backgroundColor: colors.surfaceLight,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    height: 44,
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  inputBoxArea: {
+    height: 90,
+    paddingVertical: 10,
+  },
+  inputField: {
+    color: colors.textPrimary,
+    fontSize: 14,
+    paddingVertical: 0,
+  },
+  inputFieldArea: {
+    height: "100%",
+  },
+
+  dropdownSelectorBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: colors.surfaceLight,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    height: 44,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  dropdownSelectorText: {
+    color: colors.textPrimary,
+    fontSize: 14,
+    fontWeight: "500",
+  },
+
+  editButtonsRow: {
+    flexDirection: "row",
+    gap: 12,
+    marginTop: 20,
+  },
+  cancelBtn: {
+    flex: 1,
+    height: 46,
+    borderRadius: 12,
+    backgroundColor: colors.surfaceLight,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  cancelBtnText: {
+    color: colors.textSecondary,
+    fontWeight: "600",
+    fontSize: 14,
+  },
+  saveBtn: {
+    flex: 2,
+    height: 46,
+    borderRadius: 12,
+    backgroundColor: colors.accentBlue,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  saveBtnText: {
+    color: "#ffffff",
+    fontWeight: "700",
+    fontSize: 14,
+  },
+
+  dropdownModalBox: {
+    backgroundColor: colors.surface,
+    borderRadius: 20,
+    padding: 18,
+    width: "100%",
+    maxHeight: "65%",
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  subModalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.75)",
+    justifyContent: "center",
+    paddingHorizontal: 20,
+  },
+  comunaItem: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.surfaceLight,
+  },
+  comunaItemActive: {
+    backgroundColor: colors.surfaceLight,
+    borderRadius: 8,
+  },
+  comunaItemText: {
+    fontSize: 14,
+    color: colors.textSecondary,
+  },
+  comunaItemTextActive: {
+    color: colors.accentBlue,
+    fontWeight: "700",
+  },
 
   pubTabBar: {
     flexDirection: "row",
@@ -1429,12 +1921,6 @@ const styles = StyleSheet.create({
     color: colors.accentBlue,
   },
   noApplicantsText: { fontSize: 11, color: colors.textMuted },
-  subModalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.75)",
-    justifyContent: "center",
-    paddingHorizontal: 20,
-  },
   subModalBox: {
     backgroundColor: colors.surface,
     borderRadius: 20,
@@ -1463,7 +1949,6 @@ const styles = StyleSheet.create({
     height: "100%",
   },
 
-  // Fila de acciones de gestión en progreso
   managementActionsRow: {
     flexDirection: "row",
     gap: 8,
@@ -1604,7 +2089,6 @@ const styles = StyleSheet.create({
     color: "#ffffff",
   },
 
-  // Modal Postulante
   applicantProfileBox: {
     backgroundColor: colors.surface,
     borderRadius: 20,
@@ -1659,7 +2143,6 @@ const styles = StyleSheet.create({
     lineHeight: 16,
   },
 
-  // Mini Tabs Postulante
   miniTabBar: {
     flexDirection: "row",
     borderBottomWidth: 1,
@@ -1768,7 +2251,6 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
 
-  // Modal Calificar Tarea
   reviewModalDesc: {
     fontSize: 13,
     color: colors.textSecondary,
@@ -1820,7 +2302,6 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
 
-  // Modal Créditos
   balanceCard: {
     backgroundColor: colors.surfaceLight,
     borderRadius: 16,

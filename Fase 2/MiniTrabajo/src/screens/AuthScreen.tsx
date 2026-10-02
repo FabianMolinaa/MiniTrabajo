@@ -18,6 +18,7 @@ import { supabase } from '../services/supabase';
 import { colors } from '../theme/colors';
 import { limpiarRut, validarRutChileno, formatearRutFinal } from '../utils/validarRut';
 import { estandarizarTelefonoChileno, validarTelefonoChileno } from '../utils/validarTelefono';
+import { validarPassword, ResultadoPassword } from '../utils/validarPassword';
 
 interface ErroresCampos {
   nombre?: string;
@@ -34,13 +35,31 @@ export default function AuthScreen() {
   const [mostrarPassword, setMostrarPassword] = useState(false);
   const [nombre, setNombre] = useState('');
   const [rut, setRut] = useState('');
-  const [telefono, setTelefono] = useState(''); // Guarda los 8 dígitos ingresados
+  const [telefono, setTelefono] = useState('');
   const [cargando, setCargando] = useState(false);
   const [tecladoVisible, setTecladoVisible] = useState(false);
 
   const [errores, setErrores] = useState<ErroresCampos>({});
   const [campoEnfocado, setCampoEnfocado] = useState<string | null>(null);
 
+  // Validación de contraseña en tiempo real
+  const [estadoPassword, setEstadoPassword] = useState<ResultadoPassword>(
+    validarPassword('')
+  );
+
+  // Modal 2FA (PIN de 6 dígitos)
+  const [modalPinVisible, setModalPinVisible] = useState(false);
+  const [pinIngresado, setPinIngresado] = useState('');
+  const [errorPin, setErrorPin] = useState<string | null>(null);
+  const [cargandoPin, setCargandoPin] = useState(false);
+  const [tipoOperacionPin, setTipoOperacionPin] = useState<'login' | 'registro' | null>(null);
+
+  // Modal Recuperar Contraseña
+  const [modalRecuperarVisible, setModalRecuperarVisible] = useState(false);
+  const [emailRecuperar, setEmailRecuperar] = useState('');
+  const [cargandoRecuperar, setCargandoRecuperar] = useState(false);
+
+  // Modal Feedback General (Dark theme)
   const [modalFeedback, setModalFeedback] = useState<{
     visible: boolean;
     tipo: 'error' | 'exito';
@@ -74,6 +93,14 @@ export default function AuthScreen() {
     setErrores({});
   };
 
+  const handlePasswordChange = (text: string) => {
+    setPassword(text);
+    setErrores((prev) => ({ ...prev, password: undefined }));
+    if (esRegistro) {
+      setEstadoPassword(validarPassword(text));
+    }
+  };
+
   const handleRutChange = (text: string) => {
     setErrores((prev) => ({ ...prev, rut: undefined }));
     const soloDigitosYk = text.replace(/[^0-9kK]/g, '').toUpperCase();
@@ -91,13 +118,13 @@ export default function AuthScreen() {
 
   const handleTelefonoChange = (text: string) => {
     setErrores((prev) => ({ ...prev, telefono: undefined }));
-    // Solo permitir números y máximo 8 dígitos
     const soloNum = text.replace(/[^0-9]/g, '');
     if (soloNum.length <= 8) {
       setTelefono(soloNum);
     }
   };
 
+  // 1. INICIAR SESIÓN: Primero comprueba credenciales contra Supabase
   const handleLogin = async () => {
     Keyboard.dismiss();
     const nuevosErrores: ErroresCampos = {};
@@ -111,22 +138,56 @@ export default function AuthScreen() {
     }
 
     setCargando(true);
-    const { error } = await supabase.auth.signInWithPassword({
-      email: email.trim(),
-      password: password,
-    });
-    setCargando(false);
 
-    if (error) {
+    // Verificamos credenciales con el endpoint REST de Supabase directamente
+    // para NO disparar el onAuthStateChange de App.tsx antes del PIN
+    try {
+      const response = await fetch(
+        `${process.env.EXPO_PUBLIC_SUPABASE_URL}/auth/v1/token?grant_type=password`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            apikey: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '',
+          },
+          body: JSON.stringify({
+            email: email.trim().toLowerCase(),
+            password: password,
+          }),
+        }
+      );
+
+      const resData = await response.json();
+      setCargando(false);
+
+      if (!response.ok || resData.error) {
+        // Credenciales incorrectas: Muestra error y NUNCA abre el PIN
+        setModalFeedback({
+          visible: true,
+          tipo: 'error',
+          titulo: 'Datos incorrectos',
+          mensaje: 'El correo o la contraseña no coinciden con ninguna cuenta registrada.',
+        });
+        return;
+      }
+
+      // Credenciales correctas: Se abre el PIN y la pantalla NO parpadea ni te saca
+      setTipoOperacionPin('login');
+      setPinIngresado('');
+      setErrorPin(null);
+      setModalPinVisible(true);
+    } catch {
+      setCargando(false);
       setModalFeedback({
         visible: true,
         tipo: 'error',
-        titulo: 'Datos incorrectos',
-        mensaje: 'El correo o la contraseña no coinciden con ninguna cuenta activa.',
+        titulo: 'Error de conexión',
+        mensaje: 'No se pudo verificar la cuenta. Revisa tu conexión a internet.',
       });
     }
   };
 
+  // 2. REGISTRO
   const handleRegistro = async () => {
     Keyboard.dismiss();
     const nuevosErrores: ErroresCampos = {};
@@ -135,7 +196,7 @@ export default function AuthScreen() {
     const emailNormalizado = email.trim().toLowerCase();
 
     if (!nombre.trim()) nuevosErrores.nombre = 'El nombre es obligatorio';
-    
+
     if (!rutLimpio) {
       nuevosErrores.rut = 'Ingresa tu RUT';
     } else if (!validarRutChileno(rutLimpio)) {
@@ -154,10 +215,9 @@ export default function AuthScreen() {
       nuevosErrores.email = 'Formato de correo no válido';
     }
 
-    if (!password.trim()) {
-      nuevosErrores.password = 'Ingresa una contraseña';
-    } else if (password.length < 6) {
-      nuevosErrores.password = 'Mínimo 6 caracteres requeridos';
+    const checkPass = validarPassword(password);
+    if (!checkPass.esValida) {
+      nuevosErrores.password = 'La contraseña no cumple con los requisitos';
     }
 
     if (Object.keys(nuevosErrores).length > 0) {
@@ -165,18 +225,18 @@ export default function AuthScreen() {
       return;
     }
 
-    // Teléfono siempre estandarizado en formato oficial: +569XXXXXXXX
     const telefonoEstandarizado = estandarizarTelefonoChileno(telefono);
     const rutFormateado = formatearRutFinal(rutLimpio);
 
     setCargando(true);
-
     try {
       const { data: existencia, error: rpcError } = await supabase.rpc('check_user_exists', {
         p_rut: rutFormateado,
         p_telefono: telefonoEstandarizado,
         p_email: emailNormalizado,
       });
+
+      setCargando(false);
 
       if (!rpcError && existencia) {
         const erroresDup: ErroresCampos = {};
@@ -185,7 +245,6 @@ export default function AuthScreen() {
         if (existencia.email) erroresDup.email = 'Este correo ya está en uso';
 
         if (Object.keys(erroresDup).length > 0) {
-          setCargando(false);
           setErrores(erroresDup);
           setModalFeedback({
             visible: true,
@@ -197,8 +256,55 @@ export default function AuthScreen() {
         }
       }
 
+      setTipoOperacionPin('registro');
+      setPinIngresado('');
+      setErrorPin(null);
+      setModalPinVisible(true);
+    } catch {
+      setCargando(false);
+      setModalFeedback({
+        visible: true,
+        tipo: 'error',
+        titulo: 'Error de conexión',
+        mensaje: 'No pudimos conectar con los servidores. Intenta nuevamente.',
+      });
+    }
+  };
+
+  // 3. CONFIRMAR PIN (Autoriza el acceso definitivo)
+  const handleConfirmarPin = async () => {
+    if (pinIngresado.length !== 6) {
+      setErrorPin('Debes ingresar los 6 dígitos del PIN.');
+      return;
+    }
+
+    if (pinIngresado !== '123456') {
+      setErrorPin('PIN incorrecto. Usa 123456 para la prueba.');
+      return;
+    }
+
+    setCargandoPin(true);
+
+    if (tipoOperacionPin === 'login') {
+      // Ahora sí iniciamos sesión formal en Supabase para que App.tsx monte el Home
+      const { error } = await supabase.auth.signInWithPassword({
+        email: email.trim().toLowerCase(),
+        password: password,
+      });
+
+      setCargandoPin(false);
+
+      if (error) {
+        setErrorPin('No se pudo autorizar la sesión.');
+      } else {
+        setModalPinVisible(false);
+      }
+    } else if (tipoOperacionPin === 'registro') {
+      const rutFormateado = formatearRutFinal(limpiarRut(rut));
+      const telefonoEstandarizado = estandarizarTelefonoChileno(telefono);
+
       const { error: signUpError } = await supabase.auth.signUp({
-        email: emailNormalizado,
+        email: email.trim().toLowerCase(),
         password: password,
         options: {
           data: {
@@ -210,9 +316,10 @@ export default function AuthScreen() {
         },
       });
 
-      setCargando(false);
+      setCargandoPin(false);
 
       if (signUpError) {
+        setModalPinVisible(false);
         setModalFeedback({
           visible: true,
           tipo: 'error',
@@ -222,20 +329,45 @@ export default function AuthScreen() {
             : signUpError.message,
         });
       } else {
-        setModalFeedback({
-          visible: true,
-          tipo: 'exito',
-          titulo: '¡Bienvenido a Mini-Trabajo!',
-          mensaje: 'Tu cuenta ha sido creada exitosamente.',
-        });
+        setModalPinVisible(false);
       }
-    } catch {
-      setCargando(false);
+    }
+  };
+
+  const handleCancelarPin = () => {
+    setModalPinVisible(false);
+  };
+
+  const handleRecuperarPassword = async () => {
+    if (!emailRecuperar.trim()) {
       setModalFeedback({
         visible: true,
         tipo: 'error',
-        titulo: 'Error de conexión',
-        mensaje: 'No pudimos conectar con los servidores. Intenta nuevamente.',
+        titulo: 'Correo requerido',
+        mensaje: 'Ingresa tu correo para enviarte el enlace de recuperación.',
+      });
+      return;
+    }
+
+    setCargandoRecuperar(true);
+    const { error } = await supabase.auth.resetPasswordForEmail(emailRecuperar.trim());
+    setCargandoRecuperar(false);
+
+    setModalRecuperarVisible(false);
+
+    if (error) {
+      setModalFeedback({
+        visible: true,
+        tipo: 'error',
+        titulo: 'Error al enviar',
+        mensaje: error.message,
+      });
+    } else {
+      setModalFeedback({
+        visible: true,
+        tipo: 'exito',
+        titulo: 'Enlace enviado',
+        mensaje: 'Revisa tu bandeja de entrada para restablecer tu contraseña.',
       });
     }
   };
@@ -289,7 +421,6 @@ export default function AuthScreen() {
             <View style={styles.formCard}>
               {esRegistro && (
                 <>
-                  {/* Nombre */}
                   <View style={styles.inputGroup}>
                     <Text style={styles.label}>Nombre completo *</Text>
                     <View
@@ -321,7 +452,6 @@ export default function AuthScreen() {
                     {errores.nombre && <Text style={styles.fieldErrorText}>{errores.nombre}</Text>}
                   </View>
 
-                  {/* RUT */}
                   <View style={styles.inputGroup}>
                     <Text style={styles.label}>RUT chileno *</Text>
                     <View
@@ -353,7 +483,6 @@ export default function AuthScreen() {
                     {errores.rut && <Text style={styles.fieldErrorText}>{errores.rut}</Text>}
                   </View>
 
-                  {/* Teléfono con prefijo fijo +56 9 */}
                   <View style={styles.inputGroup}>
                     <Text style={styles.label}>Teléfono de contacto / WhatsApp *</Text>
                     <View
@@ -369,7 +498,6 @@ export default function AuthScreen() {
                         color={errores.telefono ? '#ef4444' : campoEnfocado === 'telefono' ? colors.accentBlue : colors.textMuted}
                         style={styles.inputIcon}
                       />
-                      {/* Prefijo Chileno Inmutable */}
                       <View style={styles.phonePrefixBadge}>
                         <Text style={styles.phonePrefixText}>+56 9</Text>
                       </View>
@@ -391,7 +519,6 @@ export default function AuthScreen() {
                 </>
               )}
 
-              {/* Correo */}
               <View style={styles.inputGroup}>
                 <Text style={styles.label}>Correo electrónico *</Text>
                 <View
@@ -426,9 +553,10 @@ export default function AuthScreen() {
                 {errores.email && <Text style={styles.fieldErrorText}>{errores.email}</Text>}
               </View>
 
-              {/* Contraseña */}
               <View style={styles.inputGroup}>
-                <Text style={styles.label}>Contraseña *</Text>
+                <Text style={styles.label}>
+                  {esRegistro ? 'Contraseña segura *' : 'Contraseña *'}
+                </Text>
                 <View
                   style={[
                     styles.inputWrapper,
@@ -444,13 +572,10 @@ export default function AuthScreen() {
                   />
                   <TextInput
                     style={styles.input}
-                    placeholder="Mínimo 6 caracteres"
+                    placeholder={esRegistro ? 'Crea tu contraseña' : 'Tu contraseña'}
                     placeholderTextColor={colors.textMuted}
                     value={password}
-                    onChangeText={(t) => {
-                      setErrores((p) => ({ ...p, password: undefined }));
-                      setPassword(t);
-                    }}
+                    onChangeText={handlePasswordChange}
                     onFocus={() => setCampoEnfocado('password')}
                     onBlur={() => setCampoEnfocado(null)}
                     secureTextEntry={!mostrarPassword}
@@ -469,7 +594,53 @@ export default function AuthScreen() {
                     />
                   </TouchableOpacity>
                 </View>
+
                 {errores.password && <Text style={styles.fieldErrorText}>{errores.password}</Text>}
+
+                {esRegistro && password.length > 0 && (
+                  <View style={styles.reqContainer}>
+                    <View style={styles.reqRow}>
+                      <Ionicons
+                        name={estadoPassword.reglas.longitudMinima ? 'checkmark-circle' : 'ellipse-outline'}
+                        size={14}
+                        color={estadoPassword.reglas.longitudMinima ? '#22c55e' : colors.textMuted}
+                      />
+                      <Text style={[styles.reqText, estadoPassword.reglas.longitudMinima && styles.reqTextOk]}>
+                        Mínimo 8 caracteres
+                      </Text>
+                    </View>
+                    <View style={styles.reqRow}>
+                      <Ionicons
+                        name={estadoPassword.reglas.tieneMayuscula ? 'checkmark-circle' : 'ellipse-outline'}
+                        size={14}
+                        color={estadoPassword.reglas.tieneMayuscula ? '#22c55e' : colors.textMuted}
+                      />
+                      <Text style={[styles.reqText, estadoPassword.reglas.tieneMayuscula && styles.reqTextOk]}>
+                        Al menos una mayúscula (A-Z)
+                      </Text>
+                    </View>
+                    <View style={styles.reqRow}>
+                      <Ionicons
+                        name={estadoPassword.reglas.tieneMinuscula ? 'checkmark-circle' : 'ellipse-outline'}
+                        size={14}
+                        color={estadoPassword.reglas.tieneMinuscula ? '#22c55e' : colors.textMuted}
+                      />
+                      <Text style={[styles.reqText, estadoPassword.reglas.tieneMinuscula && styles.reqTextOk]}>
+                        Al menos una minúscula (a-z)
+                      </Text>
+                    </View>
+                    <View style={styles.reqRow}>
+                      <Ionicons
+                        name={estadoPassword.reglas.tieneNumero ? 'checkmark-circle' : 'ellipse-outline'}
+                        size={14}
+                        color={estadoPassword.reglas.tieneNumero ? '#22c55e' : colors.textMuted}
+                      />
+                      <Text style={[styles.reqText, estadoPassword.reglas.tieneNumero && styles.reqTextOk]}>
+                        Al menos un número (0-9)
+                      </Text>
+                    </View>
+                  </View>
+                )}
               </View>
 
               <TouchableOpacity
@@ -483,7 +654,7 @@ export default function AuthScreen() {
                 ) : (
                   <View style={styles.btnContent}>
                     <Text style={styles.btnSubmitText}>
-                      {esRegistro ? 'Crear mi cuenta' : 'Entrar a la app'}
+                      {esRegistro ? 'Crear mi cuenta' : 'Iniciar Sesión'}
                     </Text>
                     <Ionicons
                       name={esRegistro ? 'arrow-forward' : 'log-in-outline'}
@@ -493,16 +664,137 @@ export default function AuthScreen() {
                   </View>
                 )}
               </TouchableOpacity>
-            </View>
 
-            <View style={styles.footerNote}>
-              <Ionicons name="shield-checkmark-outline" size={14} color={colors.textMuted} />
-              <Text style={styles.footerNoteText}>Tus datos están protegidos y encriptados</Text>
+              {!esRegistro && (
+                <TouchableOpacity
+                  style={styles.forgotBtnCenter}
+                  onPress={() => setModalRecuperarVisible(true)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.forgotBtnText}>¿Olvidaste tu contraseña?</Text>
+                </TouchableOpacity>
+              )}
             </View>
           </ScrollView>
         </TouchableWithoutFeedback>
       </KeyboardAvoidingView>
 
+      {/* MODAL 2FA: PIN de seguridad */}
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={modalPinVisible}
+        onRequestClose={handleCancelarPin}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.feedbackCard}>
+            <View style={[styles.feedbackIconWrap, { backgroundColor: 'rgba(59, 130, 246, 0.12)' }]}>
+              <Ionicons name="key-outline" size={32} color={colors.accentBlue} />
+            </View>
+
+            <Text style={styles.feedbackTitle}>Verificación en 2 Pasos</Text>
+            <Text style={styles.feedbackMsg}>
+              {tipoOperacionPin === 'registro'
+                ? 'Datos correctos. Ingresa tu código PIN de seguridad (6 dígitos) para confirmar la creación de tu cuenta.'
+                : 'Credenciales correctas. Ingresa tu código PIN de seguridad (6 dígitos) para completar el inicio de sesión.'}
+            </Text>
+
+            <TextInput
+              style={styles.pinInput}
+              placeholder="123456"
+              placeholderTextColor={colors.textMuted}
+              keyboardType="number-pad"
+              maxLength={6}
+              value={pinIngresado}
+              onChangeText={(t) => {
+                setErrorPin(null);
+                setPinIngresado(t);
+              }}
+              textAlign="center"
+              autoFocus={true}
+            />
+
+            {errorPin && <Text style={[styles.fieldErrorText, { marginBottom: 12 }]}>{errorPin}</Text>}
+
+            <View style={{ flexDirection: 'row', gap: 10, width: '100%', marginTop: 8 }}>
+              <TouchableOpacity
+                style={[styles.btnModalOkError, { flex: 1 }]}
+                onPress={handleCancelarPin}
+              >
+                <Text style={{ color: colors.textSecondary, fontWeight: '600' }}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.btnModalOkExito, { flex: 2 }]}
+                onPress={handleConfirmarPin}
+                disabled={cargandoPin}
+              >
+                {cargandoPin ? (
+                  <ActivityIndicator color="#ffffff" size="small" />
+                ) : (
+                  <Text style={styles.btnModalOkText}>Verificar y Entrar</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+{/* MODAL RECUPERAR CONTRASEÑA */}
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={modalRecuperarVisible}
+        onRequestClose={() => setModalRecuperarVisible(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.feedbackCard}>
+            <View style={[styles.feedbackIconWrap, { backgroundColor: 'rgba(56, 189, 248, 0.12)' }]}>
+              <Ionicons name="mail-unread-outline" size={32} color={colors.accentBlue} />
+            </View>
+
+            <Text style={styles.feedbackTitle}>Recuperar Contraseña</Text>
+            <Text style={styles.feedbackMsg}>
+              Ingresa tu correo registrado para enviarte las instrucciones de restablecimiento.
+            </Text>
+
+            {/* Input corregido y visible */}
+            <View style={styles.recuperarInputWrapper}>
+              <Ionicons name="mail-outline" size={18} color={colors.textMuted} style={{ marginRight: 8 }} />
+              <TextInput
+                style={styles.recuperarInput}
+                placeholder="tu@correo.cl"
+                placeholderTextColor={colors.textMuted}
+                value={emailRecuperar}
+                onChangeText={setEmailRecuperar}
+                autoCapitalize="none"
+                keyboardType="email-address"
+              />
+            </View>
+
+            <View style={{ flexDirection: 'row', gap: 10, width: '100%', marginTop: 8 }}>
+              <TouchableOpacity
+                style={[styles.btnModalOkError, { flex: 1 }]}
+                onPress={() => setModalRecuperarVisible(false)}
+              >
+                <Text style={{ color: colors.textSecondary, fontWeight: '600' }}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.btnModalOkExito, { flex: 2 }]}
+                onPress={handleRecuperarPassword}
+                disabled={cargandoRecuperar}
+              >
+                {cargandoRecuperar ? (
+                  <ActivityIndicator color="#ffffff" size="small" />
+                ) : (
+                  <Text style={styles.btnModalOkText}>Enviar enlace</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* MODAL FEEDBACK GENERAL */}
       <Modal
         animationType="fade"
         transparent={true}
@@ -687,13 +979,33 @@ const styles = StyleSheet.create({
     marginTop: 4,
     marginLeft: 4,
   },
+  reqContainer: {
+    marginTop: 8,
+    padding: 8,
+    backgroundColor: colors.surfaceLight,
+    borderRadius: 10,
+    gap: 4,
+  },
+  reqRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  reqText: {
+    fontSize: 11,
+    color: colors.textMuted,
+  },
+  reqTextOk: {
+    color: '#22c55e',
+    fontWeight: '600',
+  },
   btnSubmit: {
     backgroundColor: colors.accentBlue,
     borderRadius: 14,
     height: 48,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 8,
+    marginTop: 6,
   },
   btnContent: {
     flexDirection: 'row',
@@ -705,16 +1017,16 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
   },
-  footerNote: {
-    flexDirection: 'row',
+  forgotBtnCenter: {
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
-    marginTop: 20,
+    marginTop: 14,
+    paddingVertical: 4,
   },
-  footerNoteText: {
+  forgotBtnText: {
     fontSize: 12,
-    color: colors.textMuted,
+    color: colors.accentBlue,
+    fontWeight: '600',
   },
   modalBackdrop: {
     flex: 1,
@@ -759,7 +1071,20 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     textAlign: 'center',
     lineHeight: 18,
-    marginBottom: 20,
+    marginBottom: 16,
+  },
+  pinInput: {
+    width: '80%',
+    height: 50,
+    backgroundColor: colors.surfaceLight,
+    borderWidth: 1,
+    borderColor: colors.accentBlue,
+    borderRadius: 14,
+    color: colors.textPrimary,
+    fontSize: 22,
+    fontWeight: '800',
+    letterSpacing: 8,
+    marginBottom: 14,
   },
   btnModalOk: {
     width: '100%',
@@ -772,13 +1097,38 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceLight,
     borderWidth: 1,
     borderColor: colors.border,
+    height: 44,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   btnModalOkExito: {
     backgroundColor: colors.accentBlue,
+    height: 44,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   btnModalOkText: {
     color: colors.textPrimary,
     fontSize: 14,
     fontWeight: '700',
+  },
+  recuperarInputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    width: '100%',
+    backgroundColor: colors.surfaceLight,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    height: 48,
+    marginBottom: 16,
+  },
+  recuperarInput: {
+    flex: 1,
+    color: colors.textPrimary,
+    fontSize: 14,
   },
 });
