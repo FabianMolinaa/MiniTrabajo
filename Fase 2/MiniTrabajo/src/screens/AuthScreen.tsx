@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import {
-  StyleSheet,
   Text,
   View,
   TextInput,
@@ -16,6 +15,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../services/supabase';
 import { colors } from '../theme/colors';
+import { styles } from '../styles/AuthStyles';
 import {
   limpiarRut,
   validarRutChileno,
@@ -130,7 +130,7 @@ export default function AuthScreen() {
     }
   };
 
-  // 1. INICIAR SESIÓN: Primero comprueba credenciales contra Supabase
+  // 1. INICIAR SESIÓN: Verifica credenciales antes del PIN
   const handleLogin = async () => {
     Keyboard.dismiss();
     const nuevosErrores: ErroresCampos = {};
@@ -145,8 +145,6 @@ export default function AuthScreen() {
 
     setCargando(true);
 
-    // Verificamos credenciales con el endpoint REST de Supabase directamente
-    // para NO disparar el onAuthStateChange de App.tsx antes del PIN
     try {
       const response = await fetch(
         `${process.env.EXPO_PUBLIC_SUPABASE_URL}/auth/v1/token?grant_type=password`,
@@ -167,7 +165,6 @@ export default function AuthScreen() {
       setCargando(false);
 
       if (!response.ok || resData.error) {
-        // Credenciales incorrectas: Muestra error y NUNCA abre el PIN
         setModalFeedback({
           visible: true,
           tipo: 'error',
@@ -177,7 +174,6 @@ export default function AuthScreen() {
         return;
       }
 
-      // Credenciales correctas: Se abre el PIN y la pantalla NO parpadea ni te saca
       setTipoOperacionPin('login');
       setPinIngresado('');
       setErrorPin(null);
@@ -277,7 +273,7 @@ export default function AuthScreen() {
     }
   };
 
-  // 3. CONFIRMAR PIN (Autoriza el acceso definitivo)
+  // 3. CONFIRMAR PIN
   const handleConfirmarPin = async () => {
     if (pinIngresado.length !== 6) {
       setErrorPin('Debes ingresar los 6 dígitos del PIN.');
@@ -292,7 +288,6 @@ export default function AuthScreen() {
     setCargandoPin(true);
 
     if (tipoOperacionPin === 'login') {
-      // Ahora sí iniciamos sesión formal en Supabase para que App.tsx monte el Home
       const { error } = await supabase.auth.signInWithPassword({
         email: email.trim().toLowerCase(),
         password: password,
@@ -309,6 +304,7 @@ export default function AuthScreen() {
       const rutFormateado = formatearRutFinal(limpiarRut(rut));
       const telefonoEstandarizado = estandarizarTelefonoChileno(telefono);
 
+      // Enviamos comuna_id acorde al esquema normalizado
       const { error: signUpError } = await supabase.auth.signUp({
         email: email.trim().toLowerCase(),
         password: password,
@@ -317,7 +313,7 @@ export default function AuthScreen() {
             nombre: nombre.trim(),
             rut: rutFormateado,
             telefono: telefonoEstandarizado,
-            comuna: 'Santiago Centro',
+            comuna_id: 1, // Santiago Centro por defecto (clave foránea normalizada)
           },
         },
       });
@@ -745,7 +741,7 @@ export default function AuthScreen() {
         </View>
       </Modal>
 
-{/* MODAL RECUPERAR CONTRASEÑA */}
+      {/* MODAL RECUPERAR CONTRASEÑA */}
       <Modal
         animationType="slide"
         transparent={true}
@@ -763,7 +759,6 @@ export default function AuthScreen() {
               Ingresa tu correo registrado para enviarte las instrucciones de restablecimiento.
             </Text>
 
-            {/* Input corregido y visible */}
             <View style={styles.recuperarInputWrapper}>
               <Ionicons name="mail-outline" size={18} color={colors.textMuted} style={{ marginRight: 8 }} />
               <TextInput
@@ -845,296 +840,3 @@ export default function AuthScreen() {
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  keyboardContainer: {
-    flex: 1,
-  },
-  scrollContent: {
-    flexGrow: 1,
-    justifyContent: 'center',
-    paddingHorizontal: 22,
-    paddingTop: 36,
-  },
-  header: {
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  logoBadge: {
-    width: 58,
-    height: 58,
-    borderRadius: 20,
-    backgroundColor: colors.surfaceLight,
-    borderWidth: 1,
-    borderColor: colors.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 12,
-  },
-  title: {
-    fontSize: 26,
-    fontWeight: '800',
-    color: colors.textPrimary,
-    letterSpacing: -0.6,
-  },
-  subtitle: {
-    fontSize: 13,
-    color: colors.textSecondary,
-    marginTop: 4,
-    textAlign: 'center',
-    paddingHorizontal: 20,
-  },
-  segmentContainer: {
-    flexDirection: 'row',
-    backgroundColor: colors.surface,
-    borderRadius: 14,
-    padding: 4,
-    borderWidth: 1,
-    borderColor: colors.border,
-    marginBottom: 16,
-  },
-  segmentBtn: {
-    flex: 1,
-    paddingVertical: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 10,
-  },
-  segmentBtnActive: {
-    backgroundColor: colors.surfaceLight,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  segmentText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: colors.textMuted,
-  },
-  segmentTextActive: {
-    color: colors.textPrimary,
-  },
-  formCard: {
-    backgroundColor: colors.surface,
-    borderRadius: 22,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  inputGroup: {
-    marginBottom: 14,
-  },
-  label: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: colors.textSecondary,
-    marginBottom: 6,
-    letterSpacing: 0.2,
-  },
-  inputWrapper: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.surfaceLight,
-    borderRadius: 13,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingHorizontal: 12,
-  },
-  inputWrapperFocused: {
-    borderColor: colors.accentBlue,
-    backgroundColor: '#161d26',
-  },
-  inputWrapperError: {
-    borderColor: '#ef4444',
-    backgroundColor: '#1f1315',
-  },
-  inputIcon: {
-    marginRight: 8,
-  },
-  phonePrefixBadge: {
-    backgroundColor: colors.surface,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-    marginRight: 8,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  phonePrefixText: {
-    color: colors.textPrimary,
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  input: {
-    flex: 1,
-    paddingVertical: 12,
-    color: colors.textPrimary,
-    fontSize: 14,
-  },
-  eyeBtn: {
-    paddingHorizontal: 8,
-    paddingVertical: 8,
-  },
-  fieldErrorText: {
-    color: '#ef4444',
-    fontSize: 11,
-    fontWeight: '600',
-    marginTop: 4,
-    marginLeft: 4,
-  },
-  reqContainer: {
-    marginTop: 8,
-    padding: 8,
-    backgroundColor: colors.surfaceLight,
-    borderRadius: 10,
-    gap: 4,
-  },
-  reqRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  reqText: {
-    fontSize: 11,
-    color: colors.textMuted,
-  },
-  reqTextOk: {
-    color: '#22c55e',
-    fontWeight: '600',
-  },
-  btnSubmit: {
-    backgroundColor: colors.accentBlue,
-    borderRadius: 14,
-    height: 48,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 6,
-  },
-  btnContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  btnSubmitText: {
-    color: '#ffffff',
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  forgotBtnCenter: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 14,
-    paddingVertical: 4,
-  },
-  forgotBtnText: {
-    fontSize: 12,
-    color: colors.accentBlue,
-    fontWeight: '600',
-  },
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.78)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 24,
-  },
-  feedbackCard: {
-    width: '100%',
-    maxWidth: 340,
-    backgroundColor: colors.surface,
-    borderRadius: 24,
-    padding: 24,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  feedbackIconWrap: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 16,
-  },
-  feedbackIconError: {
-    backgroundColor: 'rgba(239, 68, 68, 0.12)',
-  },
-  feedbackIconExito: {
-    backgroundColor: 'rgba(34, 197, 94, 0.12)',
-  },
-  feedbackTitle: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: colors.textPrimary,
-    textAlign: 'center',
-    marginBottom: 8,
-  },
-  feedbackMsg: {
-    fontSize: 13,
-    color: colors.textSecondary,
-    textAlign: 'center',
-    lineHeight: 18,
-    marginBottom: 16,
-  },
-  pinInput: {
-    width: '80%',
-    height: 50,
-    backgroundColor: colors.surfaceLight,
-    borderWidth: 1,
-    borderColor: colors.accentBlue,
-    borderRadius: 14,
-    color: colors.textPrimary,
-    fontSize: 22,
-    fontWeight: '800',
-    letterSpacing: 8,
-    marginBottom: 14,
-  },
-  btnModalOk: {
-    width: '100%',
-    height: 44,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  btnModalOkError: {
-    backgroundColor: colors.surfaceLight,
-    borderWidth: 1,
-    borderColor: colors.border,
-    height: 44,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  btnModalOkExito: {
-    backgroundColor: colors.accentBlue,
-    height: 44,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  btnModalOkText: {
-    color: colors.textPrimary,
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  recuperarInputWrapper: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    width: '100%',
-    backgroundColor: colors.surfaceLight,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    height: 48,
-    marginBottom: 16,
-  },
-  recuperarInput: {
-    flex: 1,
-    color: colors.textPrimary,
-    fontSize: 14,
-  },
-});

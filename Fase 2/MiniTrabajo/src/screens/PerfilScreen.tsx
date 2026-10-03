@@ -1,7 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { supabase } from '../services/supabase';
 import {
-  StyleSheet,
   Text,
   View,
   ScrollView,
@@ -10,7 +8,6 @@ import {
   Pressable,
   TextInput,
   Alert,
-  Linking,
   Image,
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -18,55 +15,17 @@ import {
   FlatList,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import * as ImagePicker from 'expo-image-picker';
-import { decode } from 'base64-arraybuffer';
+import * as ImagePicker from "expo-image-picker";
 import { colors } from "../theme/colors";
+import { supabase } from "../services/supabase";
+import { styles } from "../styles/PerfilStyles";
 
-const COMUNAS_DISPONIBLES = [
-  'Santiago Centro',
-  'Providencia',
-  'Las Condes',
-  'Ñuñoa',
-  'Estación Central',
-  'Maipú',
-  'La Florida',
-  'San Miguel',
-  'Macul',
-  'Peñalolén',
-  'Pudahuel',
-  'Quilicura',
-  'Recoleta',
-  'Independencia',
-];
-
-interface Resena {
+interface ResenaItem {
   id: string;
   autor: string;
   calificacion: number;
   fecha: string;
   comentario: string;
-}
-
-interface TrabajoHistorial {
-  id: string;
-  titulo: string;
-  categoria: string;
-  fecha: string;
-  monto: string;
-}
-
-interface Postulante {
-  id: string;
-  nombre: string;
-  calificacion: string;
-  trabajosHechos: number;
-  telefono: string;
-  mensaje: string;
-  estado: "pendiente" | "aceptado" | "rechazado";
-  comuna?: string;
-  sobreMi?: string;
-  resenas?: Resena[];
-  historial?: TrabajoHistorial[];
 }
 
 interface MiPublicacion {
@@ -75,9 +34,21 @@ interface MiPublicacion {
   categoria: string;
   monto: string;
   fecha: string;
-  estado: "abierta" | "en_progreso" | "completada";
-  postulantes: Postulante[];
+  estado: "disponible" | "aceptado" | "completado";
   imagenes?: string[];
+}
+
+interface TrabajoRealizadoItem {
+  id: string;
+  titulo: string;
+  categoria: string;
+  monto: string;
+  fecha: string;
+}
+
+interface ComunaItem {
+  id: number;
+  nombre: string;
 }
 
 const PAQUETES_CREDITOS = [
@@ -86,149 +57,54 @@ const PAQUETES_CREDITOS = [
   { id: "3", creditos: 50, precio: "$9.990", destacado: false, desc: "Para usuarios frecuentes" },
 ];
 
-const HISTORIAL_TRABAJOS: TrabajoHistorial[] = [
-  { id: "t1", titulo: "Armado de clóset 4 puertas", categoria: "Hogar", fecha: "12 Sep 2026", monto: "$22.000" },
-  { id: "t2", titulo: 'Instalación de soporte TV 65"', categoria: "Hogar", fecha: "05 Sep 2026", monto: "$15.000" },
-];
-
-const RESENAS_RECIBIDAS: Resena[] = [
-  {
-    id: "r1",
-    autor: "Valeria G.",
-    calificacion: 5,
-    fecha: "Hace 4 días",
-    comentario: "Llegó puntual, trajo herramientas y armó el mueble rapidísimo. Muy recomendado.",
-  },
-  {
-    id: "r2",
-    autor: "Matías P.",
-    calificacion: 5,
-    fecha: "Hace 2 semanas",
-    comentario: "Excelente trato y disposición para la tarea. Todo en orden con el pago acordado.",
-  },
-];
-
-const MIS_PUBLICACIONES_INICIALES: MiPublicacion[] = [
-  {
-    id: "pub1",
-    titulo: "Armado de mueble dormitorio",
-    categoria: "Hogar",
-    monto: "$15.000",
-    fecha: "Hoy, 14:30",
-    estado: "abierta",
-    imagenes: [
-      "https://images.unsplash.com/photo-1555041469-a586c61ea9bc?w=600",
-      "https://images.unsplash.com/photo-1586023492125-27b2c045efd7?w=600",
-    ],
-    postulantes: [
-      {
-        id: "p1",
-        nombre: "Matías Pinto",
-        calificacion: "4.8",
-        trabajosHechos: 19,
-        telefono: "56911223344",
-        mensaje: "Tengo atornillador eléctrico propio y vivo cerca. Puedo ir hoy mismo.",
-        estado: "pendiente",
-        comuna: "Santiago Centro",
-        sobreMi: "Técnico en carpintería básica y armado de muebles de retail. Responsable y puntual.",
-        resenas: [
-          { id: "mp1", autor: "Lorena V.", calificacion: 5, fecha: "Ayer", comentario: "Excelente servicio, dejó el mueble impecable." },
-          { id: "mp2", autor: "Felipe T.", calificacion: 5, fecha: "Hace 1 semana", comentario: "Trajo sus herramientas y terminó muy rápido." },
-        ],
-        historial: [
-          { id: "h1", titulo: "Ensamble de rack TV", categoria: "Hogar", fecha: "10 Sep 2026", monto: "$12.000" },
-          { id: "h2", titulo: "Reparación de bisagras", categoria: "Hogar", fecha: "02 Sep 2026", monto: "$8.000" },
-        ],
-      },
-      {
-        id: "p2",
-        nombre: "Andrés Vera",
-        calificacion: "4.5",
-        trabajosHechos: 8,
-        telefono: "56955667788",
-        mensaje: "Tengo experiencia armando muebles de retail. Cuento con herramientas.",
-        estado: "pendiente",
-        comuna: "Providencia",
-        sobreMi: "Estudiante universitario con experiencia en ensambles y arreglos de hogar.",
-        resenas: [
-          { id: "av1", autor: "Camila B.", calificacion: 4, fecha: "Hace 3 días", comentario: "Buen trabajo, muy amable y ordenado." },
-        ],
-        historial: [
-          { id: "h3", titulo: "Armado de estante modular", categoria: "Hogar", fecha: "08 Sep 2026", monto: "$10.000" },
-        ],
-      },
-    ],
-  },
-  {
-    id: "pub2",
-    titulo: "Paseo de perro (Pastor Alemán)",
-    categoria: "Mascotas",
-    monto: "$8.000",
-    fecha: "Ayer",
-    estado: "abierta",
-    imagenes: [
-      "https://images.unsplash.com/photo-1589941013453-ec89f33b5455?w=600",
-    ],
-    postulantes: [],
-  },
-  {
-    id: "pub3",
-    titulo: "Instalación de cortinas roller",
-    categoria: "Hogar",
-    monto: "$12.000",
-    fecha: "10 Sep 2026",
-    estado: "completada",
-    imagenes: [],
-    postulantes: [
-      {
-        id: "p3",
-        nombre: "Esteban Morales",
-        calificacion: "5.0",
-        trabajosHechos: 14,
-        telefono: "56944332211",
-        mensaje: "Tengo taladro percutor y tarugos especiales.",
-        estado: "aceptado",
-      },
-    ],
-  },
-];
-
 export default function PerfilScreen() {
   const [creditosActuales, setCreditosActuales] = useState(10);
-  const [misPublicaciones, setMisPublicaciones] = useState<MiPublicacion[]>(MIS_PUBLICACIONES_INICIALES);
+  const [calificacion, setCalificacion] = useState("0.0");
+  const [totalResenas, setTotalResenas] = useState(0);
+  const [trabajosRealizados, setTrabajosRealizados] = useState(0);
 
-  // Estados reales del perfil del usuario (Supabase)
   const [usuarioId, setUsuarioId] = useState<string | null>(null);
-  const [nombre, setNombre] = useState('Cargando...');
-  const [correo, setCorreo] = useState('');
-  const [comuna, setComuna] = useState('Santiago Centro');
-  const [sobreMi, setSobreMi] = useState('Sin descripción aún.');
+  const [nombre, setNombre] = useState("Cargando...");
+  const [correo, setCorreo] = useState("");
+  const [comunaNombre, setComunaNombre] = useState("Santiago Centro");
+  const [comunaId, setComunaId] = useState<number>(1);
+  const [sobreMi, setSobreMi] = useState("Sin descripción aún.");
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [cargandoPerfil, setCargandoPerfil] = useState(true);
 
-  // Estados del modal de edición
-  const [modalEditarVisible, setModalEditarVisible] = useState(false);
-  const [modalComunasVisible, setModalComunasVisible] = useState(false);
-  const [guardandoCambios, setGuardandoCambios] = useState(false);
-  const [tempNombre, setTempNombre] = useState('');
-  const [tempComuna, setTempComuna] = useState('Santiago Centro');
-  const [tempSobreMi, setTempSobreMi] = useState('');
-  const [tempAvatarUri, setTempAvatarUri] = useState<string | null>(null);
-  const [tempAvatarBase64, setTempAvatarBase64] = useState<string | null>(null);
+  // Listas de datos
+  const [misPublicaciones, setMisPublicaciones] = useState<MiPublicacion[]>([]);
+  const [resenasRecibidas, setResenasRecibidas] = useState<ResenaItem[]>([]);
+  const [historialTrabajosHechos, setHistorialTrabajosHechos] = useState<TrabajoRealizadoItem[]>([]);
+  const [comunasDisponibles, setComunasDisponibles] = useState<ComunaItem[]>([]);
 
-  // Modales existentes
+  // Estados de modales
+  const [tabPublicaciones, setTabPublicaciones] = useState<"activas" | "completadas">("activas");
   const [modalVisible, setModalVisible] = useState<
     "ninguno" | "resenas" | "historial" | "publicaciones" | "creditos"
   >("ninguno");
-  const [tareaPostulantes, setTareaPostulantes] = useState<MiPublicacion | null>(null);
-  const [tabPublicaciones, setTabPublicaciones] = useState<"activas" | "completadas">("activas");
 
-  const [postulanteSeleccionado, setPostulanteSeleccionado] = useState<Postulante | null>(null);
-  const [tabPostulante, setTabPostulante] = useState<"resenas" | "historial">("resenas");
+  // Edición del perfil
+  const [modalEditarVisible, setModalEditarVisible] = useState(false);
+  const [modalComunasVisible, setModalComunasVisible] = useState(false);
+  const [guardandoCambios, setGuardandoCambios] = useState(false);
+  const [tempNombre, setTempNombre] = useState("");
+  const [tempSobreMi, setTempSobreMi] = useState("");
+  const [tempAvatarUri, setTempAvatarUri] = useState<string | null>(null);
+  const [tempComunaId, setTempComunaId] = useState<number>(1);
+  const [tempComunaNombre, setTempComunaNombre] = useState("Santiago Centro");
 
-  const [tareaAFinalizar, setTareaAFinalizar] = useState<MiPublicacion | null>(null);
-  const [estrellasCalificacion, setEstrellasCalificacion] = useState(5);
-  const [comentarioCalificacion, setComentarioCalificacion] = useState("");
+  // Cargar lista oficial de comunas desde Supabase
+  const cargarComunas = async () => {
+    const { data, error } = await supabase
+      .from("comunas")
+      .select("id, nombre")
+      .order("nombre", { ascending: true });
+
+    if (!error && data) {
+      setComunasDisponibles(data);
+    }
+  };
 
   const cargarPerfil = async () => {
     try {
@@ -237,313 +113,213 @@ export default function PerfilScreen() {
       if (!user) return;
 
       setUsuarioId(user.id);
-      setCorreo(user.email || '');
+      setCorreo(user.email || "");
 
       const { data, error } = await supabase
-        .from('perfiles')
-        .select('*')
-        .eq('id', user.id)
+        .from("perfiles")
+        .select(`
+          nombre,
+          sobre_mi,
+          avatar_url,
+          calificacion,
+          total_resenas,
+          trabajos_realizados,
+          creditos,
+          comuna_id,
+          comunas ( id, nombre )
+        `)
+        .eq("id", user.id)
         .single();
 
       if (!error && data) {
-        setNombre(data.nombre || user.user_metadata?.nombre || 'Usuario');
-        setComuna(data.comuna || 'Santiago Centro');
-        setSobreMi(data.sobre_mi || data.descripcion || 'Sin descripción aún.');
-        setAvatarUrl(data.avatar_url && data.avatar_url.trim().length > 0 ? data.avatar_url : null);
-      } else {
-        setNombre(user.user_metadata?.nombre || 'Usuario');
+        setNombre(data.nombre || "Usuario");
+        setSobreMi(data.sobre_mi || "Sin descripción aún.");
+        setAvatarUrl(data.avatar_url || null);
+        setCalificacion(data.calificacion ? Number(data.calificacion).toFixed(1) : "0.0");
+        setTotalResenas(data.total_resenas || 0);
+        setTrabajosRealizados(data.trabajos_realizados || 0);
+        setCreditosActuales(data.creditos || 0);
+
+        if (data.comunas && typeof data.comunas === "object") {
+          // @ts-ignore
+          setComunaNombre(data.comunas.nombre || "Santiago Centro");
+          // @ts-ignore
+          setComunaId(data.comunas.id || 1);
+        }
       }
+
+      await cargarPublicaciones(user.id);
+      await cargarResenas(user.id);
+      await cargarHistorialTrabajosHechos(user.id);
     } catch (e) {
-      console.log('Error al cargar perfil:', e);
+      console.log("Error al cargar perfil:", e);
     } finally {
       setCargandoPerfil(false);
     }
   };
 
+  const cargarPublicaciones = async (uid: string) => {
+    const { data, error } = await supabase
+      .from("trabajos")
+      .select(`
+        id,
+        titulo,
+        monto,
+        estado,
+        imagenes,
+        created_at,
+        categorias ( nombre )
+      `)
+      .eq("user_id", uid)
+      .order("created_at", { ascending: false });
+
+    if (!error && data) {
+      const mapeadas: MiPublicacion[] = data.map((t: any) => ({
+        id: t.id,
+        titulo: t.titulo,
+        categoria: t.categorias?.nombre || "General",
+        monto: `$${Number(t.monto).toLocaleString("es-CL")}`,
+        fecha: new Date(t.created_at).toLocaleDateString("es-CL"),
+        estado: t.estado,
+        imagenes: t.imagenes || [],
+      }));
+      setMisPublicaciones(mapeadas);
+    }
+  };
+
+  const cargarResenas = async (uid: string) => {
+    const { data, error } = await supabase
+      .from("resenas")
+      .select(`
+        id,
+        calificacion,
+        comentario,
+        created_at,
+        perfiles!resenas_autor_id_fkey ( nombre )
+      `)
+      .eq("evaluado_id", uid)
+      .order("created_at", { ascending: false });
+
+    if (!error && data) {
+      const res: ResenaItem[] = data.map((r: any) => ({
+        id: r.id,
+        autor: r.perfiles?.nombre || "Usuario",
+        calificacion: r.calificacion,
+        comentario: r.comentario,
+        fecha: new Date(r.created_at).toLocaleDateString("es-CL"),
+      }));
+      setResenasRecibidas(res);
+    }
+  };
+
+  const cargarHistorialTrabajosHechos = async (uid: string) => {
+    const { data, error } = await supabase
+      .from("trabajos")
+      .select(`
+        id,
+        titulo,
+        monto,
+        created_at,
+        categorias ( nombre )
+      `)
+      .eq("trabajador_id", uid)
+      .eq("estado", "completado")
+      .order("created_at", { ascending: false });
+
+    if (!error && data) {
+      const mapeados: TrabajoRealizadoItem[] = data.map((t: any) => ({
+        id: t.id,
+        titulo: t.titulo,
+        categoria: t.categorias?.nombre || "General",
+        monto: `$${Number(t.monto).toLocaleString("es-CL")}`,
+        fecha: new Date(t.created_at).toLocaleDateString("es-CL"),
+      }));
+      setHistorialTrabajosHechos(mapeados);
+    }
+  };
+
   useEffect(() => {
     cargarPerfil();
+    cargarComunas();
   }, []);
 
   const handleAbrirEditar = () => {
     setTempNombre(nombre);
-    setTempComuna(comuna || 'Santiago Centro');
-    setTempSobreMi(sobreMi === 'Sin descripción aún.' ? '' : sobreMi);
+    setTempSobreMi(sobreMi === "Sin descripción aún." ? "" : sobreMi);
     setTempAvatarUri(avatarUrl);
-    setTempAvatarBase64(null);
+    setTempComunaId(comunaId);
+    setTempComunaNombre(comunaNombre);
     setModalEditarVisible(true);
   };
 
   const handleSeleccionarFoto = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Permiso denegado', 'Se requiere acceso a la galería para cambiar tu foto de perfil.');
+    if (status !== "granted") {
+      Alert.alert("Permiso denegado", "Se requiere acceso a la galería para cambiar tu foto.");
       return;
     }
 
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
+      mediaTypes: ["images"],
       allowsEditing: true,
       aspect: [1, 1],
-      quality: 0.6,
-      base64: true,
+      quality: 0.7,
     });
 
     if (!result.canceled && result.assets[0].uri) {
       setTempAvatarUri(result.assets[0].uri);
-      if (result.assets[0].base64) {
-        setTempAvatarBase64(result.assets[0].base64);
-      }
-    }
-  };
-
-  const subirAvatarStorage = async (base64Data: string, userId: string): Promise<string | null> => {
-    try {
-      const fileName = `${userId}-${Date.now()}.jpg`;
-      const { error: uploadError } = await supabase.storage
-        .from('avatars')
-        .upload(fileName, decode(base64Data), {
-          contentType: 'image/jpeg',
-          upsert: true,
-        });
-
-      if (uploadError) {
-        console.error('Error al subir avatar:', uploadError);
-        return null;
-      }
-
-      const { data } = supabase.storage
-        .from('avatars')
-        .getPublicUrl(fileName);
-
-      return data.publicUrl;
-    } catch (err) {
-      console.error('Error al procesar subida:', err);
-      return null;
     }
   };
 
   const handleGuardarPerfil = async () => {
     if (!tempNombre.trim()) {
-      Alert.alert('Atención', 'El nombre no puede estar vacío.');
+      Alert.alert("Atención", "El nombre no puede estar vacío.");
       return;
     }
-
     if (!usuarioId) return;
 
     setGuardandoCambios(true);
-
     try {
-      let finalAvatarUrl = avatarUrl;
-
-      if (tempAvatarBase64) {
-        const urlPublica = await subirAvatarStorage(tempAvatarBase64, usuarioId);
-        if (urlPublica) {
-          finalAvatarUrl = urlPublica;
-        }
-      }
-
-      const updates = {
-        nombre: tempNombre.trim(),
-        comuna: tempComuna,
-        sobre_mi: tempSobreMi.trim(),
-        avatar_url: finalAvatarUrl || '',
-      };
-
       const { error } = await supabase
-        .from('perfiles')
-        .update(updates)
-        .eq('id', usuarioId);
+        .from("perfiles")
+        .update({
+          nombre: tempNombre.trim(),
+          sobre_mi: tempSobreMi.trim(),
+          avatar_url: tempAvatarUri,
+          comuna_id: tempComunaId,
+        })
+        .eq("id", usuarioId);
 
-      if (error) {
-        await supabase
-          .from('perfiles')
-          .update({
-            nombre: tempNombre.trim(),
-            comuna: tempComuna,
-            descripcion: tempSobreMi.trim(),
-            avatar_url: finalAvatarUrl || '',
-          })
-          .eq('id', usuarioId);
-      }
+      if (error) throw error;
 
       setNombre(tempNombre.trim());
-      setComuna(tempComuna);
-      setSobreMi(tempSobreMi.trim() || 'Sin descripción aún.');
-      setAvatarUrl(finalAvatarUrl);
+      setSobreMi(tempSobreMi.trim() || "Sin descripción aún.");
+      setAvatarUrl(tempAvatarUri);
+      setComunaId(tempComunaId);
+      setComunaNombre(tempComunaNombre);
       setModalEditarVisible(false);
-
-      Alert.alert('¡Éxito!', 'Tu perfil ha sido actualizado correctamente.');
+      Alert.alert("¡Éxito!", "Perfil y ubicación actualizados correctamente.");
     } catch (err: any) {
-      Alert.alert('Error', err.message || 'No se pudo conectar con el servidor.');
+      Alert.alert("Error", err.message || "No se pudieron guardar los cambios.");
     } finally {
       setGuardandoCambios(false);
     }
+  };
+
+  const handleCerrarSesion = async () => {
+    const { error } = await supabase.auth.signOut();
+    if (error) Alert.alert("Error", error.message);
   };
 
   const handleComprarPaquete = (pack: (typeof PAQUETES_CREDITOS)[0]) => {
     const nuevoTotal = creditosActuales + pack.creditos;
     setCreditosActuales(nuevoTotal);
     setModalVisible("ninguno");
-    Alert.alert("¡Compra simulada!", `Añadiste ${pack.creditos} créditos. Tu nuevo saldo es ${nuevoTotal}.`);
+    Alert.alert("¡Compra simulada!", `Añadiste ${pack.creditos} créditos.`);
   };
 
-  const handleCerrarSesion = async () => {
-    const { error } = await supabase.auth.signOut();
-    if (error) {
-      Alert.alert("Error", "No se pudo cerrar sesión: " + error.message);
-    }
-  };
-
-  const handleAceptarPostulante = (tareaId: string, postulanteId: string) => {
-    setMisPublicaciones((prev) =>
-      prev.map((t) =>
-        t.id !== tareaId
-          ? t
-          : {
-              ...t,
-              estado: "en_progreso",
-              postulantes: t.postulantes.map((p) =>
-                p.id === postulanteId
-                  ? { ...p, estado: "aceptado" as const }
-                  : { ...p, estado: "rechazado" as const }
-              ),
-            }
-      )
-    );
-
-    if (tareaPostulantes && tareaPostulantes.id === tareaId) {
-      setTareaPostulantes({
-        ...tareaPostulantes,
-        estado: "en_progreso",
-        postulantes: tareaPostulantes.postulantes.map((p) =>
-          p.id === postulanteId ? { ...p, estado: "aceptado" } : { ...p, estado: "rechazado" }
-        ),
-      });
-    }
-
-    if (postulanteSeleccionado && postulanteSeleccionado.id === postulanteId) {
-      setPostulanteSeleccionado({
-        ...postulanteSeleccionado,
-        estado: "aceptado",
-      });
-    }
-
-    Alert.alert("¡Postulante Aceptado!", "La tarea ahora está en progreso. Ya puedes coordinar por WhatsApp.");
-  };
-
-  const handleRechazarPostulante = (tareaId: string, postulanteId: string) => {
-    const actualizar = (list: MiPublicacion[]) =>
-      list.map((t) =>
-        t.id !== tareaId
-          ? t
-          : {
-              ...t,
-              postulantes: t.postulantes.map((p) =>
-                p.id === postulanteId ? { ...p, estado: "rechazado" as const } : p
-              ),
-            }
-      );
-
-    setMisPublicaciones(actualizar);
-    if (tareaPostulantes && tareaPostulantes.id === tareaId) {
-      setTareaPostulantes({
-        ...tareaPostulantes,
-        postulantes: tareaPostulantes.postulantes.map((p) =>
-          p.id === postulanteId ? { ...p, estado: "rechazado" } : p
-        ),
-      });
-    }
-
-    if (postulanteSeleccionado && postulanteSeleccionado.id === postulanteId) {
-      setPostulanteSeleccionado(null);
-    }
-  };
-
-  const handleCancelarAcuerdo = (tareaId: string) => {
-    Alert.alert(
-      "Cancelar asignación",
-      "¿Seguro que deseas cancelar el acuerdo con este trabajador? La tarea volverá a quedar abierta para nuevos postulantes.",
-      [
-        { text: "No, volver", style: "cancel" },
-        {
-          text: "Sí, cancelar",
-          style: "destructive",
-          onPress: () => {
-            setMisPublicaciones((prev) =>
-              prev.map((t) =>
-                t.id !== tareaId
-                  ? t
-                  : {
-                      ...t,
-                      estado: "abierta",
-                      postulantes: t.postulantes.map((p) =>
-                        p.estado === "aceptado" ? { ...p, estado: "pendiente" as const } : p
-                      ),
-                    }
-              )
-            );
-            setTareaPostulantes(null);
-            Alert.alert("Asignación cancelada", "Tu tarea vuelve a estar abierta a postulaciones.");
-          },
-        },
-      ]
-    );
-  };
-
-  const handleEliminarPublicacion = (tareaId: string) => {
-    Alert.alert(
-      "Eliminar publicación",
-      "¿Deseas dar de baja esta publicación? Se removerá de la lista de trabajos activos.",
-      [
-        { text: "Cancelar", style: "cancel" },
-        {
-          text: "Eliminar",
-          style: "destructive",
-          onPress: () => {
-            setMisPublicaciones((prev) => prev.filter((t) => t.id !== tareaId));
-            setTareaPostulantes(null);
-            Alert.alert("Publicación eliminada", "La tarea ha sido cancelada.");
-          },
-        },
-      ]
-    );
-  };
-
-  const handleAbrirWhatsApp = (postulante: Postulante, tituloTarea: string) => {
-    const mensaje = encodeURIComponent(
-      `¡Hola ${postulante.nombre}! Acepté tu postulación para "${tituloTarea}". Te escribo para coordinar los detalles.`
-    );
-    const url = `https://wa.me/${postulante.telefono}?text=${mensaje}`;
-    Linking.openURL(url).catch(() => {
-      Alert.alert("Error", "No se pudo abrir WhatsApp en tu dispositivo.");
-    });
-  };
-
-  const handleConfirmarFinalizacion = () => {
-    if (!tareaAFinalizar) return;
-
-    setMisPublicaciones((prev) =>
-      prev.map((t) => (t.id === tareaAFinalizar.id ? { ...t, estado: "completada" } : t))
-    );
-
-    const trabajadorAceptado = tareaAFinalizar.postulantes.find((p) => p.estado === "aceptado");
-    const nombreTrabajador = trabajadorAceptado ? trabajadorAceptado.nombre : "el trabajador";
-
-    setTareaAFinalizar(null);
-    setTareaPostulantes(null);
-    setComentarioCalificacion("");
-    setEstrellasCalificacion(5);
-
-    Alert.alert(
-      "¡Tarea finalizada!",
-      `Has calificado a ${nombreTrabajador} con ${estrellasCalificacion} estrellas. La reseña fue registrada con éxito.`
-    );
-  };
-
-  const publicacionesActivas = misPublicaciones.filter(
-    (p) => p.estado === "abierta" || p.estado === "en_progreso"
-  );
-  const publicacionesCompletadas = misPublicaciones.filter((p) => p.estado === "completada");
+  const publicacionesActivas = misPublicaciones.filter((p) => p.estado !== "completado");
+  const publicacionesCompletadas = misPublicaciones.filter((p) => p.estado === "completado");
 
   return (
     <View style={styles.screenWrapper}>
@@ -552,7 +328,6 @@ export default function PerfilScreen() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
       >
-        {/* CABECERA PRINCIPAL CON FOTO Y DATOS REALES */}
         <View style={styles.userCard}>
           <TouchableOpacity
             activeOpacity={0.8}
@@ -564,7 +339,7 @@ export default function PerfilScreen() {
           </TouchableOpacity>
 
           <View style={styles.avatarWrap}>
-            {avatarUrl && avatarUrl.trim().length > 0 ? (
+            {avatarUrl ? (
               <Image source={{ uri: avatarUrl }} style={styles.avatarImage} />
             ) : (
               <Ionicons name="person" size={38} color={colors.textPrimary} />
@@ -591,18 +366,24 @@ export default function PerfilScreen() {
 
           <View style={styles.locationRow}>
             <Ionicons name="location-sharp" size={13} color={colors.textSecondary} />
-            <Text style={styles.locationText}>{comuna}</Text>
+            <Text style={styles.locationText}>{comunaNombre}</Text>
           </View>
         </View>
 
-        {/* TARJETAS TÁCTILES */}
+        {/* MÉTRICAS TÁCTILES */}
         <View style={styles.statsContainer}>
           <TouchableOpacity style={styles.statBox} activeOpacity={0.7} onPress={() => setModalVisible("resenas")}>
             <View style={styles.ratingRow}>
-              <Ionicons name="star" size={16} color="#eab308" />
-              <Text style={styles.statValue}>5.0</Text>
+              <Ionicons
+                name="star"
+                size={16}
+                color={Number(calificacion) > 0 ? "#eab308" : colors.textMuted}
+              />
+              <Text style={styles.statValue}>
+                {Number(calificacion) > 0 ? calificacion : "Nuevo"}
+              </Text>
             </View>
-            <Text style={styles.statLabel}>{RESENAS_RECIBIDAS.length} reseñas</Text>
+            <Text style={styles.statLabel}>{totalResenas} reseñas</Text>
             <Ionicons name="chevron-forward" size={12} color={colors.textMuted} style={styles.statChevron} />
           </TouchableOpacity>
 
@@ -611,7 +392,7 @@ export default function PerfilScreen() {
             activeOpacity={0.7}
             onPress={() => setModalVisible("historial")}
           >
-            <Text style={styles.statValue}>{HISTORIAL_TRABAJOS.length}</Text>
+            <Text style={styles.statValue}>{trabajosRealizados}</Text>
             <Text style={styles.statLabel}>Trabajos hechos</Text>
             <Ionicons name="chevron-forward" size={12} color={colors.textMuted} style={styles.statChevron} />
           </TouchableOpacity>
@@ -627,7 +408,6 @@ export default function PerfilScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* SOBRE MÍ */}
         <View style={styles.aboutCard}>
           <View style={styles.aboutHeader}>
             <Ionicons name="information-circle-outline" size={16} color={colors.accentBlue} />
@@ -636,12 +416,7 @@ export default function PerfilScreen() {
           <Text style={styles.aboutText}>{sobreMi}</Text>
         </View>
 
-        {/* CERRAR SESIÓN */}
-        <TouchableOpacity 
-          activeOpacity={0.8} 
-          style={styles.logoutButton}
-          onPress={handleCerrarSesion}
-        >
+        <TouchableOpacity activeOpacity={0.8} style={styles.logoutButton} onPress={handleCerrarSesion}>
           <Ionicons name="log-out-outline" size={18} color="#ef4444" />
           <Text style={styles.logoutText}>Cerrar sesión</Text>
         </TouchableOpacity>
@@ -655,7 +430,7 @@ export default function PerfilScreen() {
         onRequestClose={() => setModalEditarVisible(false)}
       >
         <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
           style={styles.modalOverlay}
         >
           <Pressable style={styles.modalOverlay} onPress={() => setModalEditarVisible(false)}>
@@ -674,7 +449,7 @@ export default function PerfilScreen() {
                 {/* Selector de Foto */}
                 <View style={styles.editAvatarSection}>
                   <TouchableOpacity activeOpacity={0.8} style={styles.editAvatarWrap} onPress={handleSeleccionarFoto}>
-                    {tempAvatarUri && tempAvatarUri.trim().length > 0 ? (
+                    {tempAvatarUri ? (
                       <Image source={{ uri: tempAvatarUri }} style={styles.editAvatarImage} />
                     ) : (
                       <Ionicons name="person" size={40} color={colors.textMuted} />
@@ -698,22 +473,22 @@ export default function PerfilScreen() {
                   />
                 </View>
 
-                {/* Selector de Comuna */}
+                {/* Ubicación General Normalizada (Comuna) */}
                 <Text style={styles.inputLabel}>Ubicación general (Comuna)</Text>
                 <TouchableOpacity
                   style={styles.dropdownSelectorBtn}
                   activeOpacity={0.8}
                   onPress={() => setModalComunasVisible(true)}
                 >
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
                     <Ionicons name="location-outline" size={18} color={colors.accentBlue} />
-                    <Text style={styles.dropdownSelectorText}>{tempComuna}</Text>
+                    <Text style={styles.dropdownSelectorText}>{tempComunaNombre}</Text>
                   </View>
                   <Ionicons name="chevron-down" size={18} color={colors.textMuted} />
                 </TouchableOpacity>
 
                 {/* Descripción / Sobre Mí */}
-                <Text style={styles.inputLabel}>Descripción breve (Sobre mí)</Text>
+                <Text style={styles.inputLabel}>Descripción (Sobre mí)</Text>
                 <View style={[styles.inputBox, styles.inputBoxArea]}>
                   <TextInput
                     style={[styles.inputField, styles.inputFieldArea]}
@@ -721,30 +496,22 @@ export default function PerfilScreen() {
                     numberOfLines={4}
                     value={tempSobreMi}
                     onChangeText={setTempSobreMi}
-                    placeholder="Cuéntale a otros qué servicios ofreces, tu experiencia o herramientas..."
+                    placeholder="Cuéntale a la comunidad tus habilidades y herramientas..."
                     placeholderTextColor={colors.textMuted}
                     textAlignVertical="top"
                   />
                 </View>
 
-                {/* Botones de acción */}
                 <View style={styles.editButtonsRow}>
-                  <TouchableOpacity
-                    style={styles.cancelBtn}
-                    onPress={() => setModalEditarVisible(false)}
-                  >
+                  <TouchableOpacity style={styles.cancelBtn} onPress={() => setModalEditarVisible(false)}>
                     <Text style={styles.cancelBtnText}>Cancelar</Text>
                   </TouchableOpacity>
 
-                  <TouchableOpacity
-                    style={styles.saveBtn}
-                    onPress={handleGuardarPerfil}
-                    disabled={guardandoCambios}
-                  >
+                  <TouchableOpacity style={styles.saveBtn} onPress={handleGuardarPerfil} disabled={guardandoCambios}>
                     {guardandoCambios ? (
                       <ActivityIndicator size="small" color="#ffffff" />
                     ) : (
-                      <Text style={styles.saveBtnText}>Guardar cambios</Text>
+                      <Text style={styles.saveBtnText}>Guardar</Text>
                     )}
                   </TouchableOpacity>
                 </View>
@@ -754,7 +521,7 @@ export default function PerfilScreen() {
         </KeyboardAvoidingView>
       </Modal>
 
-      {/* SUB-MODAL SELECTOR DE COMUNA */}
+      {/* SUB-MODAL SELECTOR DE COMUNA (NORMALIZADO) */}
       <Modal
         animationType="fade"
         transparent={true}
@@ -771,21 +538,22 @@ export default function PerfilScreen() {
             </View>
 
             <FlatList
-              data={COMUNAS_DISPONIBLES}
-              keyExtractor={(item) => item}
+              data={comunasDisponibles}
+              keyExtractor={(item) => item.id.toString()}
               showsVerticalScrollIndicator={false}
               renderItem={({ item }) => {
-                const isSelected = tempComuna === item;
+                const isSelected = tempComunaId === item.id;
                 return (
                   <TouchableOpacity
                     style={[styles.comunaItem, isSelected && styles.comunaItemActive]}
                     onPress={() => {
-                      setTempComuna(item);
+                      setTempComunaId(item.id);
+                      setTempComunaNombre(item.nombre);
                       setModalComunasVisible(false);
                     }}
                   >
                     <Text style={[styles.comunaItemText, isSelected && styles.comunaItemTextActive]}>
-                      {item}
+                      {item.nombre}
                     </Text>
                     {isSelected && <Ionicons name="checkmark" size={18} color={colors.accentBlue} />}
                   </TouchableOpacity>
@@ -808,7 +576,7 @@ export default function PerfilScreen() {
             <View style={styles.sheetHeader}>
               <View style={styles.sheetTitleRow}>
                 <Ionicons name="star" size={18} color="#eab308" />
-                <Text style={styles.sheetTitle}>Reseñas Recibidas ({RESENAS_RECIBIDAS.length})</Text>
+                <Text style={styles.sheetTitle}>Reseñas Recibidas ({resenasRecibidas.length})</Text>
               </View>
               <TouchableOpacity onPress={() => setModalVisible("ninguno")}>
                 <Ionicons name="close" size={24} color={colors.textPrimary} />
@@ -816,31 +584,30 @@ export default function PerfilScreen() {
             </View>
 
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingVertical: 10 }}>
-              {RESENAS_RECIBIDAS.map((resena) => (
-                <View key={resena.id} style={styles.reviewCard}>
-                  <View style={styles.reviewHeader}>
-                    <View style={styles.reviewUserRow}>
-                      <View style={styles.reviewAvatar}>
-                        <Ionicons name="person" size={14} color={colors.textPrimary} />
-                      </View>
+              {resenasRecibidas.length === 0 ? (
+                <Text style={styles.emptyTabText}>Aún no has recibido reseñas en tus trabajos.</Text>
+              ) : (
+                resenasRecibidas.map((resena) => (
+                  <View key={resena.id} style={styles.reviewCard}>
+                    <View style={styles.reviewHeader}>
                       <Text style={styles.reviewAuthor}>{resena.autor}</Text>
+                      <View style={styles.starsRow}>
+                        {[...Array(resena.calificacion)].map((_, i) => (
+                          <Ionicons key={i} name="star" size={13} color="#eab308" />
+                        ))}
+                      </View>
                     </View>
-                    <View style={styles.starsRow}>
-                      {[...Array(resena.calificacion)].map((_, i) => (
-                        <Ionicons key={i} name="star" size={13} color="#eab308" />
-                      ))}
-                    </View>
+                    <Text style={styles.reviewComment}>{resena.comentario}</Text>
+                    <Text style={styles.reviewDate}>{resena.fecha}</Text>
                   </View>
-                  <Text style={styles.reviewComment}>{resena.comentario}</Text>
-                  <Text style={styles.reviewDate}>{resena.fecha}</Text>
-                </View>
-              ))}
+                ))
+              )}
             </ScrollView>
           </Pressable>
         </Pressable>
       </Modal>
 
-      {/* MODAL: HISTORIAL */}
+      {/* MODAL: HISTORIAL DE TRABAJOS HECHOS */}
       <Modal
         animationType="slide"
         transparent={true}
@@ -852,7 +619,7 @@ export default function PerfilScreen() {
             <View style={styles.sheetHeader}>
               <View style={styles.sheetTitleRow}>
                 <Ionicons name="briefcase" size={18} color={colors.accentBlue} />
-                <Text style={styles.sheetTitle}>Trabajos Completados ({HISTORIAL_TRABAJOS.length})</Text>
+                <Text style={styles.sheetTitle}>Trabajos Completados ({historialTrabajosHechos.length})</Text>
               </View>
               <TouchableOpacity onPress={() => setModalVisible("ninguno")}>
                 <Ionicons name="close" size={24} color={colors.textPrimary} />
@@ -860,24 +627,34 @@ export default function PerfilScreen() {
             </View>
 
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingVertical: 10 }}>
-              {HISTORIAL_TRABAJOS.map((item) => (
-                <View key={item.id} style={styles.taskCard}>
-                  <View style={styles.taskHeader}>
-                    <View style={styles.badge}>
-                      <Text style={styles.badgeText}>{item.categoria}</Text>
-                    </View>
-                    <Text style={styles.taskMonto}>{item.monto}</Text>
-                  </View>
-                  <Text style={styles.taskTitle}>{item.titulo}</Text>
-                  <View style={styles.taskFooter}>
-                    <Text style={styles.taskDate}>{item.fecha}</Text>
-                    <View style={styles.badgeAcceptedTag}>
-                      <Ionicons name="checkmark-done" size={12} color={colors.accentGreen} />
-                      <Text style={styles.badgeAcceptedText}>Completado</Text>
-                    </View>
-                  </View>
+              {historialTrabajosHechos.length === 0 ? (
+                <View style={styles.emptyApplicantsBox}>
+                  <Ionicons name="hammer-outline" size={36} color={colors.textMuted} />
+                  <Text style={styles.emptyApplicantsTitle}>Aún no has completado trabajos</Text>
+                  <Text style={styles.emptyTabText}>
+                    Postula a tareas en el muro principal y cuando el solicitante marque la labor como finalizada, figurará aquí.
+                  </Text>
                 </View>
-              ))}
+              ) : (
+                historialTrabajosHechos.map((item) => (
+                  <View key={item.id} style={styles.taskCard}>
+                    <View style={styles.taskHeader}>
+                      <View style={styles.badge}>
+                        <Text style={styles.badgeText}>{item.categoria}</Text>
+                      </View>
+                      <Text style={styles.taskMonto}>{item.monto}</Text>
+                    </View>
+                    <Text style={styles.taskTitle}>{item.titulo}</Text>
+                    <View style={styles.taskFooter}>
+                      <Text style={styles.taskDate}>{item.fecha}</Text>
+                      <View style={styles.badgeAcceptedTag}>
+                        <Ionicons name="checkmark-done" size={12} color={colors.accentGreen} />
+                        <Text style={styles.badgeAcceptedText}>Completado</Text>
+                      </View>
+                    </View>
+                  </View>
+                ))
+              )}
             </ScrollView>
           </Pressable>
         </Pressable>
@@ -908,12 +685,7 @@ export default function PerfilScreen() {
                 style={styles.pubTabButton}
                 onPress={() => setTabPublicaciones("activas")}
               >
-                <Text
-                  style={[
-                    styles.pubTabText,
-                    tabPublicaciones === "activas" && styles.pubTabTextActive,
-                  ]}
-                >
+                <Text style={[styles.pubTabText, tabPublicaciones === "activas" && styles.pubTabTextActive]}>
                   Activas ({publicacionesActivas.length})
                 </Text>
                 {tabPublicaciones === "activas" && <View style={styles.pubActiveIndicator} />}
@@ -924,12 +696,7 @@ export default function PerfilScreen() {
                 style={styles.pubTabButton}
                 onPress={() => setTabPublicaciones("completadas")}
               >
-                <Text
-                  style={[
-                    styles.pubTabText,
-                    tabPublicaciones === "completadas" && styles.pubTabTextActive,
-                  ]}
-                >
+                <Text style={[styles.pubTabText, tabPublicaciones === "completadas" && styles.pubTabTextActive]}>
                   Completadas ({publicacionesCompletadas.length})
                 </Text>
                 {tabPublicaciones === "completadas" && <View style={styles.pubActiveIndicator} />}
@@ -940,444 +707,30 @@ export default function PerfilScreen() {
               {(tabPublicaciones === "activas" ? publicacionesActivas : publicacionesCompletadas).length === 0 ? (
                 <View style={styles.emptyApplicantsBox}>
                   <Ionicons name="file-tray-outline" size={36} color={colors.textMuted} />
-                  <Text style={styles.emptyApplicantsTitle}>
-                    No hay publicaciones {tabPublicaciones === "activas" ? "activas" : "completadas"}
-                  </Text>
+                  <Text style={styles.emptyApplicantsTitle}>No hay publicaciones en esta sección</Text>
                 </View>
               ) : (
-                (tabPublicaciones === "activas" ? publicacionesActivas : publicacionesCompletadas).map((tarea) => {
-                  const cantidadPendientes = tarea.postulantes.filter((p) => p.estado === "pendiente").length;
-
-                  return (
-                    <TouchableOpacity
-                      key={tarea.id}
-                      activeOpacity={0.8}
-                      style={styles.taskCard}
-                      onPress={() => setTareaPostulantes(tarea)}
-                    >
-                      <View style={styles.taskHeader}>
-                        <View style={styles.headerLeftRow}>
-                          <View style={styles.badge}>
-                            <Text style={styles.badgeText}>{tarea.categoria}</Text>
-                          </View>
-                          {tarea.imagenes && tarea.imagenes.length > 0 && (
-                            <View style={styles.photosBadgeTag}>
-                              <Ionicons name="image-outline" size={11} color={colors.accentBlue} />
-                              <Text style={styles.photosBadgeText}>{tarea.imagenes.length}</Text>
-                            </View>
-                          )}
-                        </View>
-                        <Text style={styles.taskMonto}>{tarea.monto}</Text>
+                (tabPublicaciones === "activas" ? publicacionesActivas : publicacionesCompletadas).map((tarea) => (
+                  <View key={tarea.id} style={styles.taskCard}>
+                    <View style={styles.taskHeader}>
+                      <View style={styles.badge}>
+                        <Text style={styles.badgeText}>{tarea.categoria}</Text>
                       </View>
-
-                      <Text style={styles.taskTitle}>{tarea.titulo}</Text>
-
-                      <View style={styles.taskFooter}>
-                        <Text style={styles.taskDate}>{tarea.fecha}</Text>
-
-                        {tarea.estado === "completada" ? (
-                          <View style={styles.badgeCompletedTag}>
-                            <Ionicons name="checkmark-done" size={13} color={colors.textMuted} />
-                            <Text style={styles.badgeCompletedText}>Completada</Text>
-                          </View>
-                        ) : tarea.estado === "en_progreso" ? (
-                          <View style={styles.badgeAcceptedTag}>
-                            <Ionicons name="play" size={11} color={colors.accentGreen} />
-                            <Text style={styles.badgeAcceptedText}>En curso</Text>
-                          </View>
-                        ) : cantidadPendientes > 0 ? (
-                          <View style={styles.badgeApplicantsTag}>
-                            <Ionicons name="people" size={13} color={colors.accentBlue} />
-                            <Text style={styles.badgeApplicantsText}>
-                              {cantidadPendientes} postulante{cantidadPendientes > 1 ? "s" : ""}
-                            </Text>
-                          </View>
-                        ) : (
-                          <Text style={styles.noApplicantsText}>Sin postulantes</Text>
-                        )}
+                      <Text style={styles.taskMonto}>{tarea.monto}</Text>
+                    </View>
+                    <Text style={styles.taskTitle}>{tarea.titulo}</Text>
+                    <View style={styles.taskFooter}>
+                      <Text style={styles.taskDate}>{tarea.fecha}</Text>
+                      <View style={tarea.estado === "completado" ? styles.badgeCompletedTag : styles.badgeAcceptedTag}>
+                        <Text style={tarea.estado === "completado" ? styles.badgeCompletedText : styles.badgeAcceptedText}>
+                          {tarea.estado.toUpperCase()}
+                        </Text>
                       </View>
-                    </TouchableOpacity>
-                  );
-                })
+                    </View>
+                  </View>
+                ))
               )}
             </ScrollView>
-          </Pressable>
-        </Pressable>
-      </Modal>
-
-      {/* SUB-MODAL: REVISAR CANDIDATOS Y GESTIONAR TAREA */}
-      <Modal
-        animationType="fade"
-        transparent={true}
-        visible={tareaPostulantes !== null}
-        onRequestClose={() => setTareaPostulantes(null)}
-      >
-        <Pressable style={styles.subModalOverlay} onPress={() => setTareaPostulantes(null)}>
-          <Pressable style={styles.subModalBox} onPress={(e) => e.stopPropagation()}>
-            {tareaPostulantes && (
-              <>
-                <View style={styles.sheetHeader}>
-                  <View style={{ flex: 1, paddingRight: 8 }}>
-                    <Text style={styles.sheetSub} numberOfLines={1}>
-                      {tareaPostulantes.titulo}
-                    </Text>
-                    <Text style={styles.sheetTitle}>
-                      {tareaPostulantes.estado === "completada"
-                        ? "Tarea completada"
-                        : tareaPostulantes.estado === "en_progreso"
-                        ? "Trabajo en progreso"
-                        : "Candidatos"}
-                    </Text>
-                  </View>
-                  <TouchableOpacity onPress={() => setTareaPostulantes(null)}>
-                    <Ionicons name="close" size={24} color={colors.textPrimary} />
-                  </TouchableOpacity>
-                </View>
-
-                {tareaPostulantes.imagenes && tareaPostulantes.imagenes.length > 0 && (
-                  <View style={styles.postulantesImagesContainer}>
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.miniPhotoRow}>
-                      {tareaPostulantes.imagenes.map((uri, idx) => (
-                        <View key={idx} style={styles.postulantesThumbWrap}>
-                          <Image source={{ uri }} style={styles.postulantesThumb} />
-                        </View>
-                      ))}
-                    </ScrollView>
-                  </View>
-                )}
-
-                {tareaPostulantes.estado === "en_progreso" && (
-                  <View style={styles.managementActionsRow}>
-                    <TouchableOpacity
-                      style={styles.btnFinalizarTarea}
-                      activeOpacity={0.85}
-                      onPress={() => setTareaAFinalizar(tareaPostulantes)}
-                    >
-                      <Ionicons name="checkmark-circle" size={17} color="#ffffff" />
-                      <Text style={styles.btnFinalizarTareaText}>Finalizar y Calificar</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                      style={styles.btnCancelarAcuerdo}
-                      activeOpacity={0.85}
-                      onPress={() => handleCancelarAcuerdo(tareaPostulantes.id)}
-                    >
-                      <Ionicons name="close-circle-outline" size={17} color="#ef4444" />
-                      <Text style={styles.btnCancelarAcuerdoText}>Cancelar acuerdo</Text>
-                    </TouchableOpacity>
-                  </View>
-                )}
-
-                {tareaPostulantes.estado === "abierta" && (
-                  <TouchableOpacity
-                    style={styles.btnDarDeBajaTarea}
-                    activeOpacity={0.85}
-                    onPress={() => handleEliminarPublicacion(tareaPostulantes.id)}
-                  >
-                    <Ionicons name="trash-outline" size={15} color="#ef4444" />
-                    <Text style={styles.btnDarDeBajaTareaText}>Dar de baja esta publicación</Text>
-                  </TouchableOpacity>
-                )}
-
-                <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingVertical: 8 }}>
-                  {tareaPostulantes.postulantes.length === 0 ? (
-                    <View style={styles.emptyApplicantsBox}>
-                      <Ionicons name="hourglass-outline" size={36} color={colors.textMuted} />
-                      <Text style={styles.emptyApplicantsTitle}>Aún no hay postulantes</Text>
-                    </View>
-                  ) : (
-                    tareaPostulantes.postulantes.map((post) => (
-                      <View key={post.id} style={styles.applicantCard}>
-                        <TouchableOpacity
-                          activeOpacity={0.7}
-                          style={styles.applicantHeaderTouchable}
-                          onPress={() => {
-                            setTabPostulante("resenas");
-                            setPostulanteSeleccionado(post);
-                          }}
-                        >
-                          <View style={styles.applicantUserRow}>
-                            <View style={styles.applicantAvatar}>
-                              <Ionicons name="person" size={14} color={colors.textPrimary} />
-                            </View>
-                            <View>
-                              <View style={styles.applicantNameRow}>
-                                <Text style={styles.applicantName}>{post.nombre}</Text>
-                                <Ionicons name="chevron-forward-circle-outline" size={14} color={colors.accentBlue} />
-                              </View>
-                              <View style={styles.applicantRatingRow}>
-                                <Ionicons name="star" size={11} color="#eab308" />
-                                <Text style={styles.applicantRatingText}>{post.calificacion}</Text>
-                                <Text style={styles.applicantJobsText}>• {post.trabajosHechos} tareas</Text>
-                              </View>
-                            </View>
-                          </View>
-                          {post.estado === "aceptado" && (
-                            <View style={styles.badgeAcceptedSmall}>
-                              <Text style={styles.badgeAcceptedSmallText}>
-                                {tareaPostulantes.estado === "completada" ? "Completó la tarea" : "Asignado"}
-                              </Text>
-                            </View>
-                          )}
-                        </TouchableOpacity>
-
-                        <Text style={styles.applicantMsg}>{post.mensaje}</Text>
-
-                        <View style={styles.applicantActionsRow}>
-                          {post.estado === "pendiente" && (
-                            <>
-                              <TouchableOpacity
-                                style={styles.btnReject}
-                                activeOpacity={0.8}
-                                onPress={() => handleRechazarPostulante(tareaPostulantes.id, post.id)}
-                              >
-                                <Ionicons name="close" size={15} color="#ef4444" />
-                                <Text style={styles.btnRejectText}>Rechazar</Text>
-                              </TouchableOpacity>
-
-                              <TouchableOpacity
-                                style={styles.btnAccept}
-                                activeOpacity={0.85}
-                                onPress={() => handleAceptarPostulante(tareaPostulantes.id, post.id)}
-                              >
-                                <Ionicons name="checkmark" size={15} color="#ffffff" />
-                                <Text style={styles.btnAcceptText}>Aceptar</Text>
-                              </TouchableOpacity>
-                            </>
-                          )}
-
-                          {post.estado === "aceptado" && (
-                            <TouchableOpacity
-                              style={styles.btnWhatsAppApplicant}
-                              activeOpacity={0.85}
-                              onPress={() => handleAbrirWhatsApp(post, tareaPostulantes.titulo)}
-                            >
-                              <Ionicons name="logo-whatsapp" size={16} color="#ffffff" />
-                              <Text style={styles.btnWhatsAppApplicantText}>Coordinar por WhatsApp</Text>
-                            </TouchableOpacity>
-                          )}
-                        </View>
-                      </View>
-                    ))
-                  )}
-                </ScrollView>
-              </>
-            )}
-          </Pressable>
-        </Pressable>
-      </Modal>
-
-      {/* MODAL: PERFIL DEL POSTULANTE */}
-      <Modal
-        animationType="fade"
-        transparent={true}
-        visible={postulanteSeleccionado !== null}
-        onRequestClose={() => setPostulanteSeleccionado(null)}
-      >
-        <Pressable style={styles.subModalOverlay} onPress={() => setPostulanteSeleccionado(null)}>
-          <Pressable style={styles.applicantProfileBox} onPress={(e) => e.stopPropagation()}>
-            {postulanteSeleccionado && (
-              <>
-                <View style={styles.sheetHeader}>
-                  <Text style={styles.sheetTitle}>Perfil del Postulante</Text>
-                  <TouchableOpacity onPress={() => setPostulanteSeleccionado(null)}>
-                    <Ionicons name="close" size={22} color={colors.textPrimary} />
-                  </TouchableOpacity>
-                </View>
-
-                <View style={styles.applicantProfileHeader}>
-                  <View style={styles.applicantProfileAvatar}>
-                    <Ionicons name="person" size={32} color={colors.textPrimary} />
-                  </View>
-                  <Text style={styles.applicantProfileName}>{postulanteSeleccionado.nombre}</Text>
-                  <Text style={styles.applicantProfileComuna}>{postulanteSeleccionado.comuna || "Santiago"}</Text>
-                </View>
-
-                <View style={styles.applicantProfileAboutBox}>
-                  <Text style={styles.applicantProfileAboutTitle}>Sobre este postulante</Text>
-                  <Text style={styles.applicantProfileAboutText}>
-                    {postulanteSeleccionado.sobreMi ||
-                      "Usuario activo disponible para realizar pololitos y tareas puntuales."}
-                  </Text>
-                </View>
-
-                <View style={styles.miniTabBar}>
-                  <TouchableOpacity
-                    activeOpacity={0.7}
-                    style={styles.miniTabButton}
-                    onPress={() => setTabPostulante("resenas")}
-                  >
-                    <View style={styles.tabHeaderLabel}>
-                      <Ionicons
-                        name="star"
-                        size={14}
-                        color={tabPostulante === "resenas" ? "#eab308" : colors.textMuted}
-                      />
-                      <Text
-                        style={[
-                          styles.miniTabText,
-                          tabPostulante === "resenas" && styles.miniTabTextActive,
-                        ]}
-                      >
-                        Reseñas ({postulanteSeleccionado.resenas?.length || 0})
-                      </Text>
-                    </View>
-                    {tabPostulante === "resenas" && <View style={styles.miniActiveIndicator} />}
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    activeOpacity={0.7}
-                    style={styles.miniTabButton}
-                    onPress={() => setTabPostulante("historial")}
-                  >
-                    <View style={styles.tabHeaderLabel}>
-                      <Ionicons
-                        name="briefcase"
-                        size={14}
-                        color={tabPostulante === "historial" ? colors.accentBlue : colors.textMuted}
-                      />
-                      <Text
-                        style={[
-                          styles.miniTabText,
-                          tabPostulante === "historial" && styles.miniTabTextActive,
-                        ]}
-                      >
-                        Historial ({postulanteSeleccionado.historial?.length || 0})
-                      </Text>
-                    </View>
-                    {tabPostulante === "historial" && <View style={styles.miniActiveIndicator} />}
-                  </TouchableOpacity>
-                </View>
-
-                <ScrollView style={styles.tabScrollBox} showsVerticalScrollIndicator={false}>
-                  {tabPostulante === "resenas" ? (
-                    postulanteSeleccionado.resenas && postulanteSeleccionado.resenas.length > 0 ? (
-                      postulanteSeleccionado.resenas.map((r) => (
-                        <View key={r.id} style={styles.miniReviewCard}>
-                          <View style={styles.miniReviewHeader}>
-                            <Text style={styles.miniReviewAuthor}>{r.autor}</Text>
-                            <View style={styles.starsRow}>
-                              {[...Array(r.calificacion)].map((_, i) => (
-                                <Ionicons key={i} name="star" size={11} color="#eab308" />
-                              ))}
-                            </View>
-                          </View>
-                          <Text style={styles.miniReviewComment}>{r.comentario}</Text>
-                          <Text style={styles.miniReviewDate}>{r.fecha}</Text>
-                        </View>
-                      ))
-                    ) : (
-                      <Text style={styles.emptyTabText}>No cuenta con reseñas previas.</Text>
-                    )
-                  ) : postulanteSeleccionado.historial && postulanteSeleccionado.historial.length > 0 ? (
-                    postulanteSeleccionado.historial.map((h) => (
-                      <View key={h.id} style={styles.miniHistoryCard}>
-                        <View style={styles.miniHistoryHeader}>
-                          <Text style={styles.miniHistoryTitle}>{h.titulo}</Text>
-                          <Text style={styles.miniHistoryMonto}>{h.monto}</Text>
-                        </View>
-                        <Text style={styles.miniHistoryDate}>{h.categoria} • {h.fecha}</Text>
-                      </View>
-                    ))
-                  ) : (
-                    <Text style={styles.emptyTabText}>No registra trabajos previos aún.</Text>
-                  )}
-                </ScrollView>
-
-                <View style={styles.applicantProfileActionsRow}>
-                  {postulanteSeleccionado.estado === "pendiente" && tareaPostulantes && (
-                    <TouchableOpacity
-                      style={styles.btnAccept}
-                      activeOpacity={0.85}
-                      onPress={() => handleAceptarPostulante(tareaPostulantes.id, postulanteSeleccionado.id)}
-                    >
-                      <Ionicons name="checkmark" size={16} color="#ffffff" />
-                      <Text style={styles.btnAcceptText}>Aceptar para esta tarea</Text>
-                    </TouchableOpacity>
-                  )}
-
-                  {postulanteSeleccionado.estado === "aceptado" && tareaPostulantes && (
-                    <TouchableOpacity
-                      style={styles.btnWhatsAppApplicant}
-                      activeOpacity={0.85}
-                      onPress={() => handleAbrirWhatsApp(postulanteSeleccionado, tareaPostulantes.titulo)}
-                    >
-                      <Ionicons name="logo-whatsapp" size={16} color="#ffffff" />
-                      <Text style={styles.btnWhatsAppApplicantText}>Contactar WhatsApp</Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
-              </>
-            )}
-          </Pressable>
-        </Pressable>
-      </Modal>
-
-      {/* MODAL: CALIFICAR Y FINALIZAR TAREA */}
-      <Modal
-        animationType="fade"
-        transparent={true}
-        visible={tareaAFinalizar !== null}
-        onRequestClose={() => setTareaAFinalizar(null)}
-      >
-        <Pressable style={styles.subModalOverlay} onPress={() => setTareaAFinalizar(null)}>
-          <Pressable style={styles.subModalBox} onPress={(e) => e.stopPropagation()}>
-            <View style={styles.sheetHeader}>
-              <Text style={styles.sheetTitle}>Finalizar Tarea</Text>
-              <TouchableOpacity onPress={() => setTareaAFinalizar(null)}>
-                <Ionicons name="close" size={24} color={colors.textPrimary} />
-              </TouchableOpacity>
-            </View>
-
-            <Text style={styles.reviewModalDesc}>
-              ¿Cómo fue el trabajo de{" "}
-              <Text style={{ color: colors.textPrimary, fontWeight: "700" }}>
-                {tareaAFinalizar?.postulantes.find((p) => p.estado === "aceptado")?.nombre || "el trabajador"}
-              </Text>
-              ?
-            </Text>
-
-            <View style={styles.starSelectRow}>
-              {[1, 2, 3, 4, 5].map((star) => (
-                <TouchableOpacity
-                  key={star}
-                  activeOpacity={0.7}
-                  onPress={() => setEstrellasCalificacion(star)}
-                >
-                  <Ionicons
-                    name={star <= estrellasCalificacion ? "star" : "star-outline"}
-                    size={32}
-                    color="#eab308"
-                  />
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            <View style={styles.reviewInputBox}>
-              <TextInput
-                style={styles.reviewInputField}
-                placeholder="Escribe un comentario breve sobre su puntualidad y calidad..."
-                placeholderTextColor={colors.textMuted}
-                multiline
-                numberOfLines={3}
-                value={comentarioCalificacion}
-                onChangeText={setComentarioCalificacion}
-                textAlignVertical="top"
-              />
-            </View>
-
-            <Text style={styles.reviewModalNotice}>
-              * Confirmo que el trabajo fue concluido satisfactoriamente y el pago acordado fue realizado.
-            </Text>
-
-            <TouchableOpacity
-              style={styles.btnConfirmarFinalizacion}
-              activeOpacity={0.85}
-              onPress={handleConfirmarFinalizacion}
-            >
-              <Ionicons name="checkmark-done" size={18} color="#ffffff" />
-              <Text style={styles.btnConfirmarFinalizacionText}>Confirmar y Enviar Calificación</Text>
-            </TouchableOpacity>
           </Pressable>
         </Pressable>
       </Modal>
@@ -1405,11 +758,9 @@ export default function PerfilScreen() {
               <Text style={styles.balanceLabel}>Saldo disponible</Text>
               <Text style={styles.balanceNumber}>{creditosActuales} créditos</Text>
               <Text style={styles.balanceSubtext}>
-                Cada crédito te permite posicionar y destacar tus publicaciones en los primeros lugares.
+                Usa tus créditos para destacar publicaciones en el inicio y aparecer con prioridad en el mapa.
               </Text>
             </View>
-
-            <Text style={styles.packagesTitle}>Obtener más créditos</Text>
 
             {PAQUETES_CREDITOS.map((pack) => (
               <TouchableOpacity
@@ -1418,12 +769,6 @@ export default function PerfilScreen() {
                 style={[styles.packageCard, pack.destacado && styles.packageCardPopular]}
                 onPress={() => handleComprarPaquete(pack)}
               >
-                {pack.destacado && (
-                  <View style={styles.popularBadge}>
-                    <Text style={styles.popularBadgeText}>MÁS POPULAR</Text>
-                  </View>
-                )}
-
                 <View style={styles.packageInfo}>
                   <View style={styles.packageCreditsRow}>
                     <Ionicons name="flash" size={16} color="#eab308" />
@@ -1431,7 +776,6 @@ export default function PerfilScreen() {
                   </View>
                   <Text style={styles.packageDesc}>{pack.desc}</Text>
                 </View>
-
                 <View style={styles.buyButtonWrap}>
                   <Text style={styles.packagePrice}>{pack.precio}</Text>
                 </View>
@@ -1443,937 +787,3 @@ export default function PerfilScreen() {
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  screenWrapper: { flex: 1, backgroundColor: colors.background },
-  container: { flex: 1 },
-  scrollContent: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 140 },
-  userCard: {
-    position: "relative",
-    alignItems: "center",
-    backgroundColor: colors.surface,
-    borderRadius: 20,
-    paddingVertical: 18,
-    paddingHorizontal: 16,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  creditsPillTop: {
-    position: "absolute",
-    top: 12,
-    right: 12,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-    backgroundColor: "rgba(234, 179, 8, 0.12)",
-    paddingHorizontal: 9,
-    paddingVertical: 4,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "rgba(234, 179, 8, 0.3)",
-  },
-  creditsPillText: { color: "#eab308", fontSize: 11, fontWeight: "700" },
-  avatarWrap: {
-    width: 76,
-    height: 76,
-    borderRadius: 38,
-    backgroundColor: colors.surfaceLight,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-    borderColor: colors.border,
-    marginBottom: 8,
-    marginTop: 4,
-    overflow: "hidden",
-  },
-  avatarImage: {
-    width: 76,
-    height: 76,
-    borderRadius: 38,
-  },
-  verifiedBadge: {
-    position: "absolute",
-    bottom: -2,
-    right: -2,
-    backgroundColor: colors.surface,
-    borderRadius: 10,
-  },
-  nameRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    minHeight: 28,
-  },
-  userName: { fontSize: 18, fontWeight: "700", color: colors.textPrimary },
-  editNameButton: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    backgroundColor: colors.surfaceLight,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  userEmail: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
-  locationRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    marginTop: 6,
-  },
-  locationText: { fontSize: 12, color: colors.textSecondary },
-  statsContainer: {
-    flexDirection: "row",
-    backgroundColor: colors.surface,
-    borderRadius: 18,
-    marginTop: 14,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingVertical: 12,
-  },
-  statBox: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    position: "relative",
-    paddingVertical: 4,
-  },
-  statBorderHorizontal: {
-    borderLeftWidth: 1,
-    borderRightWidth: 1,
-    borderColor: colors.border,
-  },
-  ratingRow: { flexDirection: "row", alignItems: "center", gap: 4 },
-  statValue: { fontSize: 16, fontWeight: "700", color: colors.textPrimary },
-  statLabel: { fontSize: 11, color: colors.textSecondary, marginTop: 2 },
-  statChevron: { marginTop: 3 },
-  aboutCard: {
-    backgroundColor: colors.surface,
-    borderRadius: 18,
-    padding: 14,
-    marginTop: 14,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  aboutHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    marginBottom: 6,
-  },
-  aboutTitle: { fontSize: 13, fontWeight: "700", color: colors.textPrimary },
-  aboutText: { fontSize: 12, color: colors.textSecondary, lineHeight: 18 },
-  logoutButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    marginTop: 24,
-    paddingVertical: 12,
-    borderRadius: 14,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: "#3f1d24",
-  },
-  logoutText: { color: "#ef4444", fontSize: 14, fontWeight: "600" },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.72)",
-    justifyContent: "flex-end",
-  },
-  modalSheet: {
-    backgroundColor: colors.surface,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingHorizontal: 20,
-    paddingTop: 18,
-    paddingBottom: 36,
-    maxHeight: "85%",
-    borderTopWidth: 1,
-    borderColor: colors.border,
-  },
-  sheetHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 12,
-  },
-  sheetTitleRow: { flexDirection: "row", alignItems: "center", gap: 8 },
-  sheetTitle: { fontSize: 17, fontWeight: "700", color: colors.textPrimary },
-  sheetSub: { fontSize: 12, color: colors.textSecondary },
-
-  editAvatarSection: {
-    alignItems: "center",
-    marginVertical: 12,
-  },
-  editAvatarWrap: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: colors.surfaceLight,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-    borderColor: colors.accentBlue,
-    position: "relative",
-    overflow: "hidden",
-  },
-  editAvatarImage: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-  },
-  cameraIconBadge: {
-    position: "absolute",
-    bottom: 0,
-    right: 0,
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    backgroundColor: colors.accentBlue,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 2,
-    borderColor: colors.surface,
-  },
-  editAvatarHint: {
-    fontSize: 12,
-    color: colors.textSecondary,
-    marginTop: 6,
-  },
-  inputLabel: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: colors.textSecondary,
-    marginBottom: 6,
-    marginTop: 8,
-  },
-  inputBox: {
-    backgroundColor: colors.surfaceLight,
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    height: 44,
-    justifyContent: "center",
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  inputBoxArea: {
-    height: 90,
-    paddingVertical: 10,
-  },
-  inputField: {
-    color: colors.textPrimary,
-    fontSize: 14,
-    paddingVertical: 0,
-  },
-  inputFieldArea: {
-    height: "100%",
-  },
-
-  dropdownSelectorBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    backgroundColor: colors.surfaceLight,
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    height: 44,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  dropdownSelectorText: {
-    color: colors.textPrimary,
-    fontSize: 14,
-    fontWeight: "500",
-  },
-
-  editButtonsRow: {
-    flexDirection: "row",
-    gap: 12,
-    marginTop: 20,
-  },
-  cancelBtn: {
-    flex: 1,
-    height: 46,
-    borderRadius: 12,
-    backgroundColor: colors.surfaceLight,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  cancelBtnText: {
-    color: colors.textSecondary,
-    fontWeight: "600",
-    fontSize: 14,
-  },
-  saveBtn: {
-    flex: 2,
-    height: 46,
-    borderRadius: 12,
-    backgroundColor: colors.accentBlue,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  saveBtnText: {
-    color: "#ffffff",
-    fontWeight: "700",
-    fontSize: 14,
-  },
-
-  dropdownModalBox: {
-    backgroundColor: colors.surface,
-    borderRadius: 20,
-    padding: 18,
-    width: "100%",
-    maxHeight: "65%",
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  subModalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.75)",
-    justifyContent: "center",
-    paddingHorizontal: 20,
-  },
-  comunaItem: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingVertical: 12,
-    paddingHorizontal: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.surfaceLight,
-  },
-  comunaItemActive: {
-    backgroundColor: colors.surfaceLight,
-    borderRadius: 8,
-  },
-  comunaItemText: {
-    fontSize: 14,
-    color: colors.textSecondary,
-  },
-  comunaItemTextActive: {
-    color: colors.accentBlue,
-    fontWeight: "700",
-  },
-
-  pubTabBar: {
-    flexDirection: "row",
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-    marginBottom: 10,
-  },
-  pubTabButton: {
-    flex: 1,
-    alignItems: "center",
-    paddingVertical: 10,
-    position: "relative",
-  },
-  pubTabText: {
-    fontSize: 13,
-    fontWeight: "500",
-    color: colors.textMuted,
-  },
-  pubTabTextActive: {
-    color: colors.textPrimary,
-    fontWeight: "700",
-  },
-  pubActiveIndicator: {
-    position: "absolute",
-    bottom: -1,
-    left: 20,
-    right: 20,
-    height: 2,
-    backgroundColor: colors.accentBlue,
-    borderRadius: 1,
-  },
-
-  reviewCard: {
-    backgroundColor: colors.surfaceLight,
-    borderRadius: 14,
-    padding: 12,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  reviewHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 6,
-  },
-  reviewUserRow: { flexDirection: "row", alignItems: "center", gap: 8 },
-  reviewAvatar: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: colors.surface,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  reviewAuthor: { fontSize: 13, fontWeight: "600", color: colors.textPrimary },
-  starsRow: { flexDirection: "row", gap: 2 },
-  reviewComment: {
-    fontSize: 12,
-    color: colors.textSecondary,
-    lineHeight: 16,
-    marginBottom: 4,
-  },
-  reviewDate: { fontSize: 10, color: colors.textMuted },
-  taskCard: {
-    backgroundColor: colors.surfaceLight,
-    borderRadius: 14,
-    padding: 12,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  taskHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 6,
-  },
-  headerLeftRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  badge: {
-    backgroundColor: colors.accentBlueBg,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-  },
-  badgeText: { color: colors.accentBlue, fontSize: 11, fontWeight: "600" },
-  photosBadgeTag: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 3,
-    backgroundColor: colors.surface,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  photosBadgeText: {
-    fontSize: 10,
-    fontWeight: "700",
-    color: colors.accentBlue,
-  },
-  taskMonto: { color: colors.accentGreen, fontSize: 14, fontWeight: "700" },
-  taskTitle: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: colors.textPrimary,
-    marginBottom: 8,
-  },
-  taskFooter: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  taskDate: { fontSize: 11, color: colors.textSecondary },
-  badgeAcceptedTag: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    backgroundColor: "rgba(34, 197, 94, 0.12)",
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
-  },
-  badgeAcceptedText: {
-    fontSize: 11,
-    fontWeight: "700",
-    color: colors.accentGreen,
-  },
-  badgeCompletedTag: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    backgroundColor: colors.surface,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
-  },
-  badgeCompletedText: {
-    fontSize: 11,
-    fontWeight: "600",
-    color: colors.textMuted,
-  },
-  badgeApplicantsTag: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    backgroundColor: colors.accentBlueBg,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
-  },
-  badgeApplicantsText: {
-    fontSize: 11,
-    fontWeight: "700",
-    color: colors.accentBlue,
-  },
-  noApplicantsText: { fontSize: 11, color: colors.textMuted },
-  subModalBox: {
-    backgroundColor: colors.surface,
-    borderRadius: 20,
-    padding: 18,
-    maxHeight: "75%",
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  postulantesImagesContainer: {
-    marginBottom: 10,
-  },
-  miniPhotoRow: {
-    flexDirection: "row",
-  },
-  postulantesThumbWrap: {
-    width: 64,
-    height: 64,
-    borderRadius: 10,
-    marginRight: 8,
-    overflow: "hidden",
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  postulantesThumb: {
-    width: "100%",
-    height: "100%",
-  },
-
-  managementActionsRow: {
-    flexDirection: "row",
-    gap: 8,
-    marginBottom: 12,
-  },
-  btnFinalizarTarea: {
-    flex: 1.4,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: colors.accentGreen,
-    height: 42,
-    borderRadius: 12,
-    gap: 6,
-  },
-  btnFinalizarTareaText: { color: "#ffffff", fontSize: 12, fontWeight: "700" },
-  btnCancelarAcuerdo: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: colors.surfaceLight,
-    height: 42,
-    borderRadius: 12,
-    gap: 4,
-    borderWidth: 1,
-    borderColor: "#7f1d1d",
-  },
-  btnCancelarAcuerdoText: { color: "#ef4444", fontSize: 12, fontWeight: "600" },
-
-  btnDarDeBajaTarea: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: colors.surfaceLight,
-    height: 38,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: colors.border,
-    gap: 6,
-    marginBottom: 10,
-  },
-  btnDarDeBajaTareaText: { color: "#ef4444", fontSize: 12, fontWeight: "600" },
-
-  emptyApplicantsBox: { alignItems: "center", paddingVertical: 24, gap: 8 },
-  emptyApplicantsTitle: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: colors.textSecondary,
-  },
-  applicantCard: {
-    backgroundColor: colors.surfaceLight,
-    borderRadius: 14,
-    padding: 12,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  applicantHeaderTouchable: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 6,
-  },
-  applicantUserRow: { flexDirection: "row", alignItems: "center", gap: 8 },
-  applicantAvatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: colors.surface,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  applicantNameRow: { flexDirection: "row", alignItems: "center", gap: 4 },
-  applicantName: { fontSize: 13, fontWeight: "700", color: colors.textPrimary },
-  applicantRatingRow: { flexDirection: "row", alignItems: "center", gap: 4 },
-  applicantRatingText: {
-    fontSize: 11,
-    fontWeight: "700",
-    color: colors.textPrimary,
-  },
-  applicantJobsText: { fontSize: 11, color: colors.textSecondary },
-  badgeAcceptedSmall: {
-    backgroundColor: "rgba(34, 197, 94, 0.12)",
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-  },
-  badgeAcceptedSmallText: {
-    fontSize: 10,
-    fontWeight: "700",
-    color: colors.accentGreen,
-  },
-  applicantMsg: {
-    fontSize: 12,
-    color: colors.textSecondary,
-    lineHeight: 16,
-    marginBottom: 10,
-  },
-  applicantActionsRow: { flexDirection: "row", gap: 8 },
-  btnReject: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    height: 36,
-    borderRadius: 10,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    gap: 4,
-  },
-  btnRejectText: { fontSize: 12, fontWeight: "600", color: "#ef4444" },
-  btnAccept: {
-    flex: 1.6,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    height: 36,
-    borderRadius: 10,
-    backgroundColor: colors.accentBlue,
-    gap: 4,
-  },
-  btnAcceptText: { fontSize: 12, fontWeight: "700", color: "#ffffff" },
-  btnWhatsAppApplicant: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    height: 40,
-    borderRadius: 10,
-    backgroundColor: "#22c55e",
-    gap: 6,
-  },
-  btnWhatsAppApplicantText: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: "#ffffff",
-  },
-
-  applicantProfileBox: {
-    backgroundColor: colors.surface,
-    borderRadius: 20,
-    padding: 18,
-    borderWidth: 1,
-    borderColor: colors.border,
-    maxHeight: "80%",
-  },
-  applicantProfileHeader: {
-    alignItems: "center",
-    paddingTop: 4,
-    paddingBottom: 8,
-  },
-  applicantProfileAvatar: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: colors.surfaceLight,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 6,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  applicantProfileName: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: colors.textPrimary,
-  },
-  applicantProfileComuna: {
-    fontSize: 12,
-    color: colors.textSecondary,
-    marginTop: 2,
-  },
-  applicantProfileAboutBox: {
-    backgroundColor: colors.surfaceLight,
-    borderRadius: 12,
-    padding: 10,
-    marginVertical: 10,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  applicantProfileAboutTitle: {
-    fontSize: 11,
-    fontWeight: "700",
-    color: colors.textPrimary,
-    marginBottom: 3,
-  },
-  applicantProfileAboutText: {
-    fontSize: 12,
-    color: colors.textSecondary,
-    lineHeight: 16,
-  },
-
-  miniTabBar: {
-    flexDirection: "row",
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-    marginBottom: 8,
-  },
-  miniTabButton: {
-    flex: 1,
-    alignItems: "center",
-    paddingVertical: 8,
-    position: "relative",
-  },
-  tabHeaderLabel: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-  },
-  miniTabText: {
-    fontSize: 12,
-    fontWeight: "500",
-    color: colors.textMuted,
-  },
-  miniTabTextActive: {
-    color: colors.textPrimary,
-    fontWeight: "700",
-  },
-  miniActiveIndicator: {
-    position: "absolute",
-    bottom: -1,
-    left: 14,
-    right: 14,
-    height: 2,
-    backgroundColor: colors.accentBlue,
-    borderRadius: 1,
-  },
-  tabScrollBox: {
-    maxHeight: 140,
-    marginBottom: 10,
-  },
-  miniReviewCard: {
-    backgroundColor: colors.surfaceLight,
-    borderRadius: 10,
-    padding: 8,
-    marginBottom: 6,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  miniReviewHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 2,
-  },
-  miniReviewAuthor: {
-    fontSize: 11,
-    fontWeight: "700",
-    color: colors.textPrimary,
-  },
-  miniReviewComment: {
-    fontSize: 11,
-    color: colors.textSecondary,
-    lineHeight: 15,
-  },
-  miniReviewDate: {
-    fontSize: 9,
-    color: colors.textMuted,
-    marginTop: 2,
-  },
-  miniHistoryCard: {
-    backgroundColor: colors.surfaceLight,
-    borderRadius: 10,
-    padding: 8,
-    marginBottom: 6,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  miniHistoryHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  miniHistoryTitle: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: colors.textPrimary,
-  },
-  miniHistoryMonto: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: colors.accentGreen,
-  },
-  miniHistoryDate: {
-    fontSize: 10,
-    color: colors.textSecondary,
-    marginTop: 2,
-  },
-  emptyTabText: {
-    fontSize: 11,
-    color: colors.textMuted,
-    fontStyle: "italic",
-    textAlign: "center",
-    paddingVertical: 14,
-  },
-  applicantProfileActionsRow: {
-    flexDirection: "row",
-    marginTop: 4,
-  },
-
-  reviewModalDesc: {
-    fontSize: 13,
-    color: colors.textSecondary,
-    textAlign: "center",
-    marginTop: 4,
-    marginBottom: 16,
-  },
-  starSelectRow: {
-    flexDirection: "row",
-    justifyContent: "center",
-    gap: 12,
-    marginBottom: 16,
-  },
-  reviewInputBox: {
-    backgroundColor: colors.surfaceLight,
-    borderRadius: 12,
-    padding: 12,
-    height: 80,
-    borderWidth: 1,
-    borderColor: colors.border,
-    marginBottom: 10,
-  },
-  reviewInputField: {
-    color: colors.textPrimary,
-    fontSize: 13,
-    paddingVertical: 0,
-    height: "100%",
-  },
-  reviewModalNotice: {
-    fontSize: 11,
-    color: colors.textMuted,
-    fontStyle: "italic",
-    textAlign: "center",
-    lineHeight: 15,
-    marginBottom: 16,
-  },
-  btnConfirmarFinalizacion: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: colors.accentBlue,
-    height: 46,
-    borderRadius: 12,
-    gap: 8,
-  },
-  btnConfirmarFinalizacionText: {
-    color: "#ffffff",
-    fontSize: 14,
-    fontWeight: "700",
-  },
-
-  balanceCard: {
-    backgroundColor: colors.surfaceLight,
-    borderRadius: 16,
-    padding: 16,
-    alignItems: "center",
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  balanceLabel: {
-    fontSize: 12,
-    color: colors.textSecondary,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
-  balanceNumber: {
-    fontSize: 24,
-    fontWeight: "800",
-    color: "#eab308",
-    marginVertical: 4,
-  },
-  balanceSubtext: {
-    fontSize: 11,
-    color: colors.textMuted,
-    textAlign: "center",
-    lineHeight: 15,
-  },
-  packagesTitle: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: colors.textPrimary,
-    marginBottom: 10,
-  },
-  packageCard: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    backgroundColor: colors.surfaceLight,
-    padding: 14,
-    borderRadius: 14,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: colors.border,
-    position: "relative",
-  },
-  packageCardPopular: {
-    borderColor: "#eab308",
-    backgroundColor: "rgba(234, 179, 8, 0.05)",
-  },
-  popularBadge: {
-    position: "absolute",
-    top: -9,
-    right: 14,
-    backgroundColor: "#eab308",
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-    borderRadius: 6,
-  },
-  popularBadgeText: { fontSize: 9, fontWeight: "800", color: "#000000" },
-  packageInfo: { flex: 1 },
-  packageCreditsRow: { flexDirection: "row", alignItems: "center", gap: 5 },
-  packageCredits: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: colors.textPrimary,
-  },
-  packageDesc: { fontSize: 11, color: colors.textSecondary, marginTop: 2 },
-  buyButtonWrap: {
-    backgroundColor: colors.accentBlue,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 10,
-  },
-  packagePrice: { fontSize: 13, fontWeight: "700", color: "#ffffff" },
-});
