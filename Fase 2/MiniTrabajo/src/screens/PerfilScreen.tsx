@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useCallback } from "react";
+import { useFocusEffect } from '@react-navigation/native';
 import {
   Text,
   View,
@@ -13,38 +14,29 @@ import {
   KeyboardAvoidingView,
   Platform,
   FlatList,
+  Linking,
+  RefreshControl,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
+import { decode } from "base64-arraybuffer";
 import { colors } from "../theme/colors";
 import { supabase } from "../services/supabase";
 import { styles } from "../styles/PerfilStyles";
-
-interface ResenaItem {
-  id: string;
-  autor: string;
-  calificacion: number;
-  fecha: string;
-  comentario: string;
-}
-
-interface MiPublicacion {
-  id: string;
-  titulo: string;
-  categoria: string;
-  monto: string;
-  fecha: string;
-  estado: "disponible" | "aceptado" | "completado";
-  imagenes?: string[];
-}
-
-interface TrabajoRealizadoItem {
-  id: string;
-  titulo: string;
-  categoria: string;
-  monto: string;
-  fecha: string;
-}
+import {
+  ResenaItem,
+  TrabajoRealizadoItem,
+  PostulanteBD,
+  MiPublicacion,
+  PerfilData,
+  fetchPerfilUsuario,
+  fetchPublicacionesUsuario,
+  fetchPostulantesDeTarea,
+  fetchResenasUsuario,
+  fetchHistorialTrabajosHechos,
+  aceptarPostulante,
+  finalizarYCalificarTarea,
+} from "../utils/functionsPerfil";
 
 interface ComunaItem {
   id: number;
@@ -58,247 +50,242 @@ const PAQUETES_CREDITOS = [
 ];
 
 export default function PerfilScreen() {
-  const [creditosActuales, setCreditosActuales] = useState(10);
-  const [calificacion, setCalificacion] = useState("0.0");
-  const [totalResenas, setTotalResenas] = useState(0);
-  const [trabajosRealizados, setTrabajosRealizados] = useState(0);
-
   const [usuarioId, setUsuarioId] = useState<string | null>(null);
-  const [nombre, setNombre] = useState("Cargando...");
   const [correo, setCorreo] = useState("");
-  const [comunaNombre, setComunaNombre] = useState("Santiago Centro");
-  const [comunaId, setComunaId] = useState<number>(1);
-  const [sobreMi, setSobreMi] = useState("Sin descripción aún.");
-  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [cargandoPerfil, setCargandoPerfil] = useState(true);
+  const [refrescando, setRefrescando] = useState(false);
 
-  // Listas de datos
+  // Perfil
+  const [perfil, setPerfil] = useState<PerfilData>({
+    nombre: "Cargando...",
+    sobre_mi: "Sin descripción aún.",
+    avatar_url: null,
+    calificacion: "0.0",
+    total_resenas: 0,
+    trabajos_realizados: 0,
+    creditos: 10,
+    comuna_id: 1,
+    comuna_nombre: "Santiago Centro",
+  });
+
+  // Listas
   const [misPublicaciones, setMisPublicaciones] = useState<MiPublicacion[]>([]);
   const [resenasRecibidas, setResenasRecibidas] = useState<ResenaItem[]>([]);
-  const [historialTrabajosHechos, setHistorialTrabajosHechos] = useState<TrabajoRealizadoItem[]>([]);
+  const [historialTrabajos, setHistorialTrabajos] = useState<TrabajoRealizadoItem[]>([]);
   const [comunasDisponibles, setComunasDisponibles] = useState<ComunaItem[]>([]);
 
-  // Estados de modales
-  const [tabPublicaciones, setTabPublicaciones] = useState<"activas" | "completadas">("activas");
-  const [modalVisible, setModalVisible] = useState<
-    "ninguno" | "resenas" | "historial" | "publicaciones" | "creditos"
-  >("ninguno");
+  // Tarea y Postulantes
+  const [tareaSeleccionada, setTareaSeleccionada] = useState<MiPublicacion | null>(null);
+  const [postulantesDeTarea, setPostulantesDeTarea] = useState<PostulanteBD[]>([]);
+  const [cargandoPostulantes, setCargandoPostulantes] = useState(false);
+  const [postulanteDetalle, setPostulanteDetalle] = useState<PostulanteBD | null>(null);
+  const [resenasPostulante, setResenasPostulante] = useState<ResenaItem[]>([]);
+  const [historialPostulante, setHistorialPostulante] = useState<TrabajoRealizadoItem[]>([]);
+  const [tabPostulante, setTabPostulante] = useState<"resenas" | "historial">("resenas");
 
-  // Edición del perfil
+  // Calificación
+  const [tareaAFinalizar, setTareaAFinalizar] = useState<MiPublicacion | null>(null);
+  const [estrellasCalificacion, setEstrellasCalificacion] = useState(5);
+  const [comentarioCalificacion, setComentarioCalificacion] = useState("");
+  const [guardandoFinalizacion, setGuardandoFinalizacion] = useState(false);
+
+  // Modales
+  const [tabPublicaciones, setTabPublicaciones] = useState<"activas" | "completadas">("activas");
+  const [modalVisible, setModalVisible] = useState<"ninguno" | "resenas" | "historial" | "publicaciones" | "creditos">("ninguno");
   const [modalEditarVisible, setModalEditarVisible] = useState(false);
   const [modalComunasVisible, setModalComunasVisible] = useState(false);
   const [guardandoCambios, setGuardandoCambios] = useState(false);
+
+  // Form edición
   const [tempNombre, setTempNombre] = useState("");
   const [tempSobreMi, setTempSobreMi] = useState("");
   const [tempAvatarUri, setTempAvatarUri] = useState<string | null>(null);
+  const [tempAvatarBase64, setTempAvatarBase64] = useState<string | null>(null);
   const [tempComunaId, setTempComunaId] = useState<number>(1);
   const [tempComunaNombre, setTempComunaNombre] = useState("Santiago Centro");
 
-  // Cargar lista oficial de comunas desde Supabase
-  const cargarComunas = async () => {
-    const { data, error } = await supabase
-      .from("comunas")
-      .select("id, nombre")
-      .order("nombre", { ascending: true });
-
-    if (!error && data) {
-      setComunasDisponibles(data);
-    }
-  };
-
-  const cargarPerfil = async () => {
+  const cargarDatos = useCallback(async () => {
     try {
-      setCargandoPerfil(true);
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
       setUsuarioId(user.id);
       setCorreo(user.email || "");
 
-      const { data, error } = await supabase
-        .from("perfiles")
-        .select(`
-          nombre,
-          sobre_mi,
-          avatar_url,
-          calificacion,
-          total_resenas,
-          trabajos_realizados,
-          creditos,
-          comuna_id,
-          comunas ( id, nombre )
-        `)
-        .eq("id", user.id)
-        .single();
+      const [perfilRes, pubsRes, resenasRes, histRes, comunasRes] = await Promise.all([
+        fetchPerfilUsuario(user.id),
+        fetchPublicacionesUsuario(user.id),
+        fetchResenasUsuario(user.id),
+        fetchHistorialTrabajosHechos(user.id),
+        supabase.from("comunas").select("id, nombre").order("nombre", { ascending: true }),
+      ]);
 
-      if (!error && data) {
-        setNombre(data.nombre || "Usuario");
-        setSobreMi(data.sobre_mi || "Sin descripción aún.");
-        setAvatarUrl(data.avatar_url || null);
-        setCalificacion(data.calificacion ? Number(data.calificacion).toFixed(1) : "0.0");
-        setTotalResenas(data.total_resenas || 0);
-        setTrabajosRealizados(data.trabajos_realizados || 0);
-        setCreditosActuales(data.creditos || 0);
-
-        if (data.comunas && typeof data.comunas === "object") {
-          // @ts-ignore
-          setComunaNombre(data.comunas.nombre || "Santiago Centro");
-          // @ts-ignore
-          setComunaId(data.comunas.id || 1);
-        }
-      }
-
-      await cargarPublicaciones(user.id);
-      await cargarResenas(user.id);
-      await cargarHistorialTrabajosHechos(user.id);
+      if (perfilRes) setPerfil(perfilRes);
+      setMisPublicaciones(pubsRes);
+      setResenasRecibidas(resenasRes);
+      setHistorialTrabajos(histRes);
+      if (comunasRes.data) setComunasDisponibles(comunasRes.data);
     } catch (e) {
-      console.log("Error al cargar perfil:", e);
+      console.error("Error al cargar perfil:", e);
     } finally {
       setCargandoPerfil(false);
+      setRefrescando(false);
     }
-  };
-
-  const cargarPublicaciones = async (uid: string) => {
-    const { data, error } = await supabase
-      .from("trabajos")
-      .select(`
-        id,
-        titulo,
-        monto,
-        estado,
-        imagenes,
-        created_at,
-        categorias ( nombre )
-      `)
-      .eq("user_id", uid)
-      .order("created_at", { ascending: false });
-
-    if (!error && data) {
-      const mapeadas: MiPublicacion[] = data.map((t: any) => ({
-        id: t.id,
-        titulo: t.titulo,
-        categoria: t.categorias?.nombre || "General",
-        monto: `$${Number(t.monto).toLocaleString("es-CL")}`,
-        fecha: new Date(t.created_at).toLocaleDateString("es-CL"),
-        estado: t.estado,
-        imagenes: t.imagenes || [],
-      }));
-      setMisPublicaciones(mapeadas);
-    }
-  };
-
-  const cargarResenas = async (uid: string) => {
-    const { data, error } = await supabase
-      .from("resenas")
-      .select(`
-        id,
-        calificacion,
-        comentario,
-        created_at,
-        perfiles!resenas_autor_id_fkey ( nombre )
-      `)
-      .eq("evaluado_id", uid)
-      .order("created_at", { ascending: false });
-
-    if (!error && data) {
-      const res: ResenaItem[] = data.map((r: any) => ({
-        id: r.id,
-        autor: r.perfiles?.nombre || "Usuario",
-        calificacion: r.calificacion,
-        comentario: r.comentario,
-        fecha: new Date(r.created_at).toLocaleDateString("es-CL"),
-      }));
-      setResenasRecibidas(res);
-    }
-  };
-
-  const cargarHistorialTrabajosHechos = async (uid: string) => {
-    const { data, error } = await supabase
-      .from("trabajos")
-      .select(`
-        id,
-        titulo,
-        monto,
-        created_at,
-        categorias ( nombre )
-      `)
-      .eq("trabajador_id", uid)
-      .eq("estado", "completado")
-      .order("created_at", { ascending: false });
-
-    if (!error && data) {
-      const mapeados: TrabajoRealizadoItem[] = data.map((t: any) => ({
-        id: t.id,
-        titulo: t.titulo,
-        categoria: t.categorias?.nombre || "General",
-        monto: `$${Number(t.monto).toLocaleString("es-CL")}`,
-        fecha: new Date(t.created_at).toLocaleDateString("es-CL"),
-      }));
-      setHistorialTrabajosHechos(mapeados);
-    }
-  };
-
-  useEffect(() => {
-    cargarPerfil();
-    cargarComunas();
   }, []);
 
-  const handleAbrirEditar = () => {
-    setTempNombre(nombre);
-    setTempSobreMi(sobreMi === "Sin descripción aún." ? "" : sobreMi);
-    setTempAvatarUri(avatarUrl);
-    setTempComunaId(comunaId);
-    setTempComunaNombre(comunaNombre);
-    setModalEditarVisible(true);
+  useFocusEffect(
+    useCallback(() => {
+      cargarDatos();
+    }, [cargarDatos])
+  );
+
+  const onRefresh = useCallback(() => {
+    setRefrescando(true);
+    cargarDatos();
+  }, [cargarDatos]);
+
+  const handleSeleccionarTarea = async (tarea: MiPublicacion) => {
+    setTareaSeleccionada(tarea);
+    setCargandoPostulantes(true);
+    const postulantes = await fetchPostulantesDeTarea(tarea.id);
+    setPostulantesDeTarea(postulantes);
+    setCargandoPostulantes(false);
   };
 
-  const handleSeleccionarFoto = async () => {
+  const handleVerPerfilPostulante = async (postulante: PostulanteBD) => {
+    setPostulanteDetalle(postulante);
+    setTabPostulante("resenas");
+    const [resenas, historial] = await Promise.all([
+      fetchResenasUsuario(postulante.postulante_id),
+      fetchHistorialTrabajosHechos(postulante.postulante_id),
+    ]);
+    setResenasPostulante(resenas);
+    setHistorialPostulante(historial);
+  };
+
+  const handleAceptar = async (postulante: PostulanteBD) => {
+    if (!tareaSeleccionada || !usuarioId) return;
+    try {
+      await aceptarPostulante(tareaSeleccionada.id, postulante.id, postulante.postulante_id);
+      Alert.alert("¡Postulante Aceptado!", "El trabajo quedó asignado. Ya puedes coordinar por WhatsApp.");
+      await cargarDatos();
+      await handleSeleccionarTarea({ ...tareaSeleccionada, estado: "aceptado", trabajador_id: postulante.postulante_id });
+      if (postulanteDetalle) setPostulanteDetalle({ ...postulanteDetalle, estado: "aceptado" });
+    } catch (err: any) {
+      Alert.alert("Error", err.message || "No se pudo aceptar al postulante.");
+    }
+  };
+
+  const handleRechazar = async (postulanteId: string) => {
+    try {
+      await supabase.from("postulaciones").update({ estado: "rechazado" }).eq("id", postulanteId);
+      setPostulantesDeTarea((prev) => prev.map((p) => (p.id === postulanteId ? { ...p, estado: "rechazado" } : p)));
+      if (postulanteDetalle?.id === postulanteId) setPostulanteDetalle(null);
+    } catch (err: any) {
+      Alert.alert("Error", err.message || "No se pudo rechazar al postulante.");
+    }
+  };
+
+  const handleConfirmarFinalizacion = async () => {
+    if (!tareaAFinalizar || !usuarioId || !tareaAFinalizar.trabajador_id) return;
+    setGuardandoFinalizacion(true);
+    try {
+      await finalizarYCalificarTarea(
+        tareaAFinalizar.id,
+        usuarioId,
+        tareaAFinalizar.trabajador_id,
+        estrellasCalificacion,
+        comentarioCalificacion
+      );
+      Alert.alert("¡Tarea Finalizada!", "Se registró el cierre y la calificación con éxito.");
+      setTareaAFinalizar(null);
+      setTareaSeleccionada(null);
+      setComentarioCalificacion("");
+      setEstrellasCalificacion(5);
+      await cargarDatos();
+    } catch (err: any) {
+      Alert.alert("Error", err.message || "No se pudo cerrar la tarea.");
+    } finally {
+      setGuardandoFinalizacion(false);
+    }
+  };
+
+  const handlePickFoto = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== "granted") {
-      Alert.alert("Permiso denegado", "Se requiere acceso a la galería para cambiar tu foto.");
+      Alert.alert("Permiso denegado", "Se requiere acceso a la galería.");
       return;
     }
-
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ["images"],
       allowsEditing: true,
       aspect: [1, 1],
-      quality: 0.7,
+      quality: 0.6,
+      base64: true, // <-- Base64 directo de la galería sin usar expo-file-system
     });
 
-    if (!result.canceled && result.assets[0].uri) {
+    if (!result.canceled && result.assets[0]?.uri) {
       setTempAvatarUri(result.assets[0].uri);
+      if (result.assets[0].base64) {
+        setTempAvatarBase64(result.assets[0].base64);
+      }
+    }
+  };
+
+  const subirAvatarStorage = async (base64Data: string, uid: string): Promise<string | null> => {
+    try {
+      const fileName = `${uid}-${Date.now()}.jpg`;
+      const { error: uploadError } = await supabase.storage
+        .from("avatars")
+        .upload(fileName, decode(base64Data), {
+          contentType: "image/jpeg",
+          upsert: true,
+        });
+
+      if (uploadError) {
+        console.error("Error al subir avatar:", uploadError);
+        return null;
+      }
+
+      const { data } = supabase.storage.from("avatars").getPublicUrl(fileName);
+      return data.publicUrl;
+    } catch (err) {
+      console.error("Error subiendo avatar:", err);
+      return null;
     }
   };
 
   const handleGuardarPerfil = async () => {
-    if (!tempNombre.trim()) {
+    if (!tempNombre.trim() || !usuarioId) {
       Alert.alert("Atención", "El nombre no puede estar vacío.");
       return;
     }
-    if (!usuarioId) return;
-
     setGuardandoCambios(true);
     try {
+      let finalAvatarUrl = perfil.avatar_url;
+
+      if (tempAvatarBase64) {
+        const urlPublica = await subirAvatarStorage(tempAvatarBase64, usuarioId);
+        if (urlPublica) {
+          finalAvatarUrl = urlPublica;
+        }
+      }
+
       const { error } = await supabase
         .from("perfiles")
         .update({
           nombre: tempNombre.trim(),
           sobre_mi: tempSobreMi.trim(),
-          avatar_url: tempAvatarUri,
+          avatar_url: finalAvatarUrl,
           comuna_id: tempComunaId,
         })
         .eq("id", usuarioId);
 
       if (error) throw error;
-
-      setNombre(tempNombre.trim());
-      setSobreMi(tempSobreMi.trim() || "Sin descripción aún.");
-      setAvatarUrl(tempAvatarUri);
-      setComunaId(tempComunaId);
-      setComunaNombre(tempComunaNombre);
       setModalEditarVisible(false);
-      Alert.alert("¡Éxito!", "Perfil y ubicación actualizados correctamente.");
+      setTempAvatarBase64(null);
+      await cargarDatos();
+      Alert.alert("¡Éxito!", "Perfil actualizado.");
     } catch (err: any) {
       Alert.alert("Error", err.message || "No se pudieron guardar los cambios.");
     } finally {
@@ -306,16 +293,13 @@ export default function PerfilScreen() {
     }
   };
 
-  const handleCerrarSesion = async () => {
-    const { error } = await supabase.auth.signOut();
-    if (error) Alert.alert("Error", error.message);
-  };
-
-  const handleComprarPaquete = (pack: (typeof PAQUETES_CREDITOS)[0]) => {
-    const nuevoTotal = creditosActuales + pack.creditos;
-    setCreditosActuales(nuevoTotal);
-    setModalVisible("ninguno");
-    Alert.alert("¡Compra simulada!", `Añadiste ${pack.creditos} créditos.`);
+  const handleAbrirWhatsApp = (telefono: string, tituloTarea: string) => {
+    if (!telefono) {
+      Alert.alert("Sin teléfono", "Este usuario no tiene teléfono registrado.");
+      return;
+    }
+    const cleanTel = telefono.replace(/[^0-9]/g, "");
+    Linking.openURL(`https://wa.me/${cleanTel}?text=${encodeURIComponent(`¡Hola! Te contacto por tu postulación a "${tituloTarea}".`)}`);
   };
 
   const publicacionesActivas = misPublicaciones.filter((p) => p.estado !== "completado");
@@ -327,20 +311,25 @@ export default function PerfilScreen() {
         style={styles.container}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
+        refreshControl={
+          <RefreshControl
+            refreshing={refrescando}
+            onRefresh={onRefresh}
+            colors={[colors.accentBlue]}
+            tintColor={colors.accentBlue}
+          />
+        }
       >
+        {/* TARJETA USUARIO */}
         <View style={styles.userCard}>
-          <TouchableOpacity
-            activeOpacity={0.8}
-            style={styles.creditsPillTop}
-            onPress={() => setModalVisible("creditos")}
-          >
+          <TouchableOpacity activeOpacity={0.8} style={styles.creditsPillTop} onPress={() => setModalVisible("creditos")}>
             <Ionicons name="sparkles" size={13} color="#eab308" />
-            <Text style={styles.creditsPillText}>{creditosActuales} créditos</Text>
+            <Text style={styles.creditsPillText}>{perfil.creditos} créditos</Text>
           </TouchableOpacity>
 
           <View style={styles.avatarWrap}>
-            {avatarUrl ? (
-              <Image source={{ uri: avatarUrl }} style={styles.avatarImage} />
+            {perfil.avatar_url ? (
+              <Image source={{ uri: perfil.avatar_url }} style={styles.avatarImage} />
             ) : (
               <Ionicons name="person" size={38} color={colors.textPrimary} />
             )}
@@ -354,223 +343,73 @@ export default function PerfilScreen() {
               <ActivityIndicator size="small" color={colors.accentBlue} />
             ) : (
               <>
-                <Text style={styles.userName}>{nombre}</Text>
-                <TouchableOpacity activeOpacity={0.7} style={styles.editNameButton} onPress={handleAbrirEditar}>
+                <Text style={styles.userName}>{perfil.nombre}</Text>
+                <TouchableOpacity
+                  activeOpacity={0.7}
+                  style={styles.editNameButton}
+                  onPress={() => {
+                    setTempNombre(perfil.nombre);
+                    setTempSobreMi(perfil.sobre_mi === "Sin descripción aún." ? "" : perfil.sobre_mi);
+                    setTempAvatarUri(perfil.avatar_url);
+                    setTempAvatarBase64(null);
+                    setTempComunaId(perfil.comuna_id);
+                    setTempComunaNombre(perfil.comuna_nombre);
+                    setModalEditarVisible(true);
+                  }}
+                >
                   <Ionicons name="pencil" size={14} color={colors.textSecondary} />
                 </TouchableOpacity>
               </>
             )}
           </View>
-
           <Text style={styles.userEmail}>{correo}</Text>
-
           <View style={styles.locationRow}>
             <Ionicons name="location-sharp" size={13} color={colors.textSecondary} />
-            <Text style={styles.locationText}>{comunaNombre}</Text>
+            <Text style={styles.locationText}>{perfil.comuna_nombre}</Text>
           </View>
         </View>
 
-        {/* MÉTRICAS TÁCTILES */}
+        {/* MÉTRICAS */}
         <View style={styles.statsContainer}>
           <TouchableOpacity style={styles.statBox} activeOpacity={0.7} onPress={() => setModalVisible("resenas")}>
             <View style={styles.ratingRow}>
-              <Ionicons
-                name="star"
-                size={16}
-                color={Number(calificacion) > 0 ? "#eab308" : colors.textMuted}
-              />
-              <Text style={styles.statValue}>
-                {Number(calificacion) > 0 ? calificacion : "Nuevo"}
-              </Text>
+              <Ionicons name="star" size={16} color={Number(perfil.calificacion) > 0 ? "#eab308" : colors.textMuted} />
+              <Text style={styles.statValue}>{Number(perfil.calificacion) > 0 ? perfil.calificacion : "Nuevo"}</Text>
             </View>
-            <Text style={styles.statLabel}>{totalResenas} reseñas</Text>
+            <Text style={styles.statLabel}>{perfil.total_resenas} reseñas</Text>
             <Ionicons name="chevron-forward" size={12} color={colors.textMuted} style={styles.statChevron} />
           </TouchableOpacity>
 
-          <TouchableOpacity
-            style={[styles.statBox, styles.statBorderHorizontal]}
-            activeOpacity={0.7}
-            onPress={() => setModalVisible("historial")}
-          >
-            <Text style={styles.statValue}>{trabajosRealizados}</Text>
+          <TouchableOpacity style={[styles.statBox, styles.statBorderHorizontal]} activeOpacity={0.7} onPress={() => setModalVisible("historial")}>
+            <Text style={styles.statValue}>{perfil.trabajos_realizados}</Text>
             <Text style={styles.statLabel}>Trabajos hechos</Text>
             <Ionicons name="chevron-forward" size={12} color={colors.textMuted} style={styles.statChevron} />
           </TouchableOpacity>
 
-          <TouchableOpacity
-            style={styles.statBox}
-            activeOpacity={0.7}
-            onPress={() => setModalVisible("publicaciones")}
-          >
+          <TouchableOpacity style={styles.statBox} activeOpacity={0.7} onPress={() => setModalVisible("publicaciones")}>
             <Text style={[styles.statValue, { color: colors.accentBlue }]}>{misPublicaciones.length}</Text>
             <Text style={styles.statLabel}>Publicaciones</Text>
             <Ionicons name="chevron-forward" size={12} color={colors.textMuted} style={styles.statChevron} />
           </TouchableOpacity>
         </View>
 
+        {/* SOBRE MÍ */}
         <View style={styles.aboutCard}>
           <View style={styles.aboutHeader}>
             <Ionicons name="information-circle-outline" size={16} color={colors.accentBlue} />
             <Text style={styles.aboutTitle}>Sobre mí</Text>
           </View>
-          <Text style={styles.aboutText}>{sobreMi}</Text>
+          <Text style={styles.aboutText}>{perfil.sobre_mi}</Text>
         </View>
 
-        <TouchableOpacity activeOpacity={0.8} style={styles.logoutButton} onPress={handleCerrarSesion}>
+        <TouchableOpacity activeOpacity={0.8} style={styles.logoutButton} onPress={() => supabase.auth.signOut()}>
           <Ionicons name="log-out-outline" size={18} color="#ef4444" />
           <Text style={styles.logoutText}>Cerrar sesión</Text>
         </TouchableOpacity>
       </ScrollView>
 
-      {/* MODAL: EDITAR PERFIL */}
-      <Modal
-        animationType="slide"
-        transparent={true}
-        visible={modalEditarVisible}
-        onRequestClose={() => setModalEditarVisible(false)}
-      >
-        <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : undefined}
-          style={styles.modalOverlay}
-        >
-          <Pressable style={styles.modalOverlay} onPress={() => setModalEditarVisible(false)}>
-            <Pressable style={styles.modalSheet} onPress={(e) => e.stopPropagation()}>
-              <View style={styles.sheetHeader}>
-                <View style={styles.sheetTitleRow}>
-                  <Ionicons name="pencil" size={18} color={colors.accentBlue} />
-                  <Text style={styles.sheetTitle}>Editar Perfil</Text>
-                </View>
-                <TouchableOpacity onPress={() => setModalEditarVisible(false)}>
-                  <Ionicons name="close" size={24} color={colors.textPrimary} />
-                </TouchableOpacity>
-              </View>
-
-              <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 20 }}>
-                {/* Selector de Foto */}
-                <View style={styles.editAvatarSection}>
-                  <TouchableOpacity activeOpacity={0.8} style={styles.editAvatarWrap} onPress={handleSeleccionarFoto}>
-                    {tempAvatarUri ? (
-                      <Image source={{ uri: tempAvatarUri }} style={styles.editAvatarImage} />
-                    ) : (
-                      <Ionicons name="person" size={40} color={colors.textMuted} />
-                    )}
-                    <View style={styles.cameraIconBadge}>
-                      <Ionicons name="camera" size={14} color="#ffffff" />
-                    </View>
-                  </TouchableOpacity>
-                  <Text style={styles.editAvatarHint}>Toca para cambiar tu foto</Text>
-                </View>
-
-                {/* Nombre */}
-                <Text style={styles.inputLabel}>Nombre completo</Text>
-                <View style={styles.inputBox}>
-                  <TextInput
-                    style={styles.inputField}
-                    value={tempNombre}
-                    onChangeText={setTempNombre}
-                    placeholder="Tu nombre"
-                    placeholderTextColor={colors.textMuted}
-                  />
-                </View>
-
-                {/* Ubicación General Normalizada (Comuna) */}
-                <Text style={styles.inputLabel}>Ubicación general (Comuna)</Text>
-                <TouchableOpacity
-                  style={styles.dropdownSelectorBtn}
-                  activeOpacity={0.8}
-                  onPress={() => setModalComunasVisible(true)}
-                >
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                    <Ionicons name="location-outline" size={18} color={colors.accentBlue} />
-                    <Text style={styles.dropdownSelectorText}>{tempComunaNombre}</Text>
-                  </View>
-                  <Ionicons name="chevron-down" size={18} color={colors.textMuted} />
-                </TouchableOpacity>
-
-                {/* Descripción / Sobre Mí */}
-                <Text style={styles.inputLabel}>Descripción (Sobre mí)</Text>
-                <View style={[styles.inputBox, styles.inputBoxArea]}>
-                  <TextInput
-                    style={[styles.inputField, styles.inputFieldArea]}
-                    multiline
-                    numberOfLines={4}
-                    value={tempSobreMi}
-                    onChangeText={setTempSobreMi}
-                    placeholder="Cuéntale a la comunidad tus habilidades y herramientas..."
-                    placeholderTextColor={colors.textMuted}
-                    textAlignVertical="top"
-                  />
-                </View>
-
-                <View style={styles.editButtonsRow}>
-                  <TouchableOpacity style={styles.cancelBtn} onPress={() => setModalEditarVisible(false)}>
-                    <Text style={styles.cancelBtnText}>Cancelar</Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity style={styles.saveBtn} onPress={handleGuardarPerfil} disabled={guardandoCambios}>
-                    {guardandoCambios ? (
-                      <ActivityIndicator size="small" color="#ffffff" />
-                    ) : (
-                      <Text style={styles.saveBtnText}>Guardar</Text>
-                    )}
-                  </TouchableOpacity>
-                </View>
-              </ScrollView>
-            </Pressable>
-          </Pressable>
-        </KeyboardAvoidingView>
-      </Modal>
-
-      {/* SUB-MODAL SELECTOR DE COMUNA (NORMALIZADO) */}
-      <Modal
-        animationType="fade"
-        transparent={true}
-        visible={modalComunasVisible}
-        onRequestClose={() => setModalComunasVisible(false)}
-      >
-        <Pressable style={styles.subModalOverlay} onPress={() => setModalComunasVisible(false)}>
-          <Pressable style={styles.dropdownModalBox} onPress={(e) => e.stopPropagation()}>
-            <View style={styles.sheetHeader}>
-              <Text style={styles.sheetTitle}>Selecciona tu Comuna</Text>
-              <TouchableOpacity onPress={() => setModalComunasVisible(false)}>
-                <Ionicons name="close" size={22} color={colors.textPrimary} />
-              </TouchableOpacity>
-            </View>
-
-            <FlatList
-              data={comunasDisponibles}
-              keyExtractor={(item) => item.id.toString()}
-              showsVerticalScrollIndicator={false}
-              renderItem={({ item }) => {
-                const isSelected = tempComunaId === item.id;
-                return (
-                  <TouchableOpacity
-                    style={[styles.comunaItem, isSelected && styles.comunaItemActive]}
-                    onPress={() => {
-                      setTempComunaId(item.id);
-                      setTempComunaNombre(item.nombre);
-                      setModalComunasVisible(false);
-                    }}
-                  >
-                    <Text style={[styles.comunaItemText, isSelected && styles.comunaItemTextActive]}>
-                      {item.nombre}
-                    </Text>
-                    {isSelected && <Ionicons name="checkmark" size={18} color={colors.accentBlue} />}
-                  </TouchableOpacity>
-                );
-              }}
-            />
-          </Pressable>
-        </Pressable>
-      </Modal>
-
-      {/* MODAL: RESEÑAS */}
-      <Modal
-        animationType="slide"
-        transparent={true}
-        visible={modalVisible === "resenas"}
-        onRequestClose={() => setModalVisible("ninguno")}
-      >
+      {/* MODAL 1: RESEÑAS */}
+      <Modal animationType="slide" transparent={true} visible={modalVisible === "resenas"} onRequestClose={() => setModalVisible("ninguno")}>
         <Pressable style={styles.modalOverlay} onPress={() => setModalVisible("ninguno")}>
           <Pressable style={styles.modalSheet} onPress={(e) => e.stopPropagation()}>
             <View style={styles.sheetHeader}>
@@ -582,23 +421,22 @@ export default function PerfilScreen() {
                 <Ionicons name="close" size={24} color={colors.textPrimary} />
               </TouchableOpacity>
             </View>
-
-            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingVertical: 10 }}>
+            <ScrollView showsVerticalScrollIndicator={false}>
               {resenasRecibidas.length === 0 ? (
-                <Text style={styles.emptyTabText}>Aún no has recibido reseñas en tus trabajos.</Text>
+                <Text style={styles.emptyTabText}>Aún no has recibido reseñas.</Text>
               ) : (
-                resenasRecibidas.map((resena) => (
-                  <View key={resena.id} style={styles.reviewCard}>
+                resenasRecibidas.map((r) => (
+                  <View key={r.id} style={styles.reviewCard}>
                     <View style={styles.reviewHeader}>
-                      <Text style={styles.reviewAuthor}>{resena.autor}</Text>
+                      <Text style={styles.reviewAuthor}>{r.autor}</Text>
                       <View style={styles.starsRow}>
-                        {[...Array(resena.calificacion)].map((_, i) => (
-                          <Ionicons key={i} name="star" size={13} color="#eab308" />
+                        {[...Array(r.calificacion)].map((_, i) => (
+                          <Ionicons key={i} name="star" size={12} color="#eab308" />
                         ))}
                       </View>
                     </View>
-                    <Text style={styles.reviewComment}>{resena.comentario}</Text>
-                    <Text style={styles.reviewDate}>{resena.fecha}</Text>
+                    <Text style={styles.reviewComment}>{r.comentario}</Text>
+                    <Text style={styles.reviewDate}>{r.fecha}</Text>
                   </View>
                 ))
               )}
@@ -607,41 +445,30 @@ export default function PerfilScreen() {
         </Pressable>
       </Modal>
 
-      {/* MODAL: HISTORIAL DE TRABAJOS HECHOS */}
-      <Modal
-        animationType="slide"
-        transparent={true}
-        visible={modalVisible === "historial"}
-        onRequestClose={() => setModalVisible("ninguno")}
-      >
+      {/* MODAL 2: HISTORIAL DE TRABAJOS HECHOS */}
+      <Modal animationType="slide" transparent={true} visible={modalVisible === "historial"} onRequestClose={() => setModalVisible("ninguno")}>
         <Pressable style={styles.modalOverlay} onPress={() => setModalVisible("ninguno")}>
           <Pressable style={styles.modalSheet} onPress={(e) => e.stopPropagation()}>
             <View style={styles.sheetHeader}>
               <View style={styles.sheetTitleRow}>
                 <Ionicons name="briefcase" size={18} color={colors.accentBlue} />
-                <Text style={styles.sheetTitle}>Trabajos Completados ({historialTrabajosHechos.length})</Text>
+                <Text style={styles.sheetTitle}>Trabajos Completados ({historialTrabajos.length})</Text>
               </View>
               <TouchableOpacity onPress={() => setModalVisible("ninguno")}>
                 <Ionicons name="close" size={24} color={colors.textPrimary} />
               </TouchableOpacity>
             </View>
-
-            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingVertical: 10 }}>
-              {historialTrabajosHechos.length === 0 ? (
+            <ScrollView showsVerticalScrollIndicator={false}>
+              {historialTrabajos.length === 0 ? (
                 <View style={styles.emptyApplicantsBox}>
                   <Ionicons name="hammer-outline" size={36} color={colors.textMuted} />
                   <Text style={styles.emptyApplicantsTitle}>Aún no has completado trabajos</Text>
-                  <Text style={styles.emptyTabText}>
-                    Postula a tareas en el muro principal y cuando el solicitante marque la labor como finalizada, figurará aquí.
-                  </Text>
                 </View>
               ) : (
-                historialTrabajosHechos.map((item) => (
+                historialTrabajos.map((item) => (
                   <View key={item.id} style={styles.taskCard}>
                     <View style={styles.taskHeader}>
-                      <View style={styles.badge}>
-                        <Text style={styles.badgeText}>{item.categoria}</Text>
-                      </View>
+                      <View style={styles.badge}><Text style={styles.badgeText}>{item.categoria}</Text></View>
                       <Text style={styles.taskMonto}>{item.monto}</Text>
                     </View>
                     <Text style={styles.taskTitle}>{item.titulo}</Text>
@@ -660,13 +487,8 @@ export default function PerfilScreen() {
         </Pressable>
       </Modal>
 
-      {/* MODAL: MIS PUBLICACIONES */}
-      <Modal
-        animationType="slide"
-        transparent={true}
-        visible={modalVisible === "publicaciones"}
-        onRequestClose={() => setModalVisible("ninguno")}
-      >
+      {/* MODAL 3: MIS PUBLICACIONES */}
+      <Modal animationType="slide" transparent={true} visible={modalVisible === "publicaciones"} onRequestClose={() => setModalVisible("ninguno")}>
         <Pressable style={styles.modalOverlay} onPress={() => setModalVisible("ninguno")}>
           <Pressable style={styles.modalSheet} onPress={(e) => e.stopPropagation()}>
             <View style={styles.sheetHeader}>
@@ -680,22 +502,13 @@ export default function PerfilScreen() {
             </View>
 
             <View style={styles.pubTabBar}>
-              <TouchableOpacity
-                activeOpacity={0.7}
-                style={styles.pubTabButton}
-                onPress={() => setTabPublicaciones("activas")}
-              >
+              <TouchableOpacity activeOpacity={0.7} style={styles.pubTabButton} onPress={() => setTabPublicaciones("activas")}>
                 <Text style={[styles.pubTabText, tabPublicaciones === "activas" && styles.pubTabTextActive]}>
                   Activas ({publicacionesActivas.length})
                 </Text>
                 {tabPublicaciones === "activas" && <View style={styles.pubActiveIndicator} />}
               </TouchableOpacity>
-
-              <TouchableOpacity
-                activeOpacity={0.7}
-                style={styles.pubTabButton}
-                onPress={() => setTabPublicaciones("completadas")}
-              >
+              <TouchableOpacity activeOpacity={0.7} style={styles.pubTabButton} onPress={() => setTabPublicaciones("completadas")}>
                 <Text style={[styles.pubTabText, tabPublicaciones === "completadas" && styles.pubTabTextActive]}>
                   Completadas ({publicacionesCompletadas.length})
                 </Text>
@@ -703,45 +516,379 @@ export default function PerfilScreen() {
               </TouchableOpacity>
             </View>
 
-            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingVertical: 10 }}>
-              {(tabPublicaciones === "activas" ? publicacionesActivas : publicacionesCompletadas).length === 0 ? (
-                <View style={styles.emptyApplicantsBox}>
-                  <Ionicons name="file-tray-outline" size={36} color={colors.textMuted} />
-                  <Text style={styles.emptyApplicantsTitle}>No hay publicaciones en esta sección</Text>
-                </View>
-              ) : (
-                (tabPublicaciones === "activas" ? publicacionesActivas : publicacionesCompletadas).map((tarea) => (
-                  <View key={tarea.id} style={styles.taskCard}>
-                    <View style={styles.taskHeader}>
-                      <View style={styles.badge}>
-                        <Text style={styles.badgeText}>{tarea.categoria}</Text>
-                      </View>
-                      <Text style={styles.taskMonto}>{tarea.monto}</Text>
+            <ScrollView showsVerticalScrollIndicator={false}>
+              {(tabPublicaciones === "activas" ? publicacionesActivas : publicacionesCompletadas).map((tarea) => (
+                <TouchableOpacity key={tarea.id} activeOpacity={0.8} style={styles.taskCard} onPress={() => handleSeleccionarTarea(tarea)}>
+                  <View style={styles.taskHeader}>
+                    <View style={styles.headerLeftRow}>
+                      <View style={styles.badge}><Text style={styles.badgeText}>{tarea.categoria}</Text></View>
+                      {tarea.imagenes && tarea.imagenes.length > 0 && (
+                        <View style={styles.photosBadgeTag}>
+                          <Ionicons name="image-outline" size={11} color={colors.accentBlue} />
+                          <Text style={styles.photosBadgeText}>{tarea.imagenes.length}</Text>
+                        </View>
+                      )}
                     </View>
-                    <Text style={styles.taskTitle}>{tarea.titulo}</Text>
-                    <View style={styles.taskFooter}>
-                      <Text style={styles.taskDate}>{tarea.fecha}</Text>
-                      <View style={tarea.estado === "completado" ? styles.badgeCompletedTag : styles.badgeAcceptedTag}>
-                        <Text style={tarea.estado === "completado" ? styles.badgeCompletedText : styles.badgeAcceptedText}>
-                          {tarea.estado.toUpperCase()}
-                        </Text>
-                      </View>
-                    </View>
+                    <Text style={styles.taskMonto}>{tarea.monto}</Text>
                   </View>
-                ))
-              )}
+                  <Text style={styles.taskTitle}>{tarea.titulo}</Text>
+                  <View style={styles.taskFooter}>
+                    <Text style={styles.taskDate}>{tarea.fecha}</Text>
+                    {tarea.estado === "completado" ? (
+                      <View style={styles.badgeCompletedTag}>
+                        <Ionicons name="checkmark-done" size={12} color={colors.textMuted} />
+                        <Text style={styles.badgeCompletedText}>Completada</Text>
+                      </View>
+                    ) : tarea.estado === "aceptado" ? (
+                      <View style={styles.badgeAcceptedTag}>
+                        <Ionicons name="play" size={11} color={colors.accentGreen} />
+                        <Text style={styles.badgeAcceptedText}>En curso</Text>
+                      </View>
+                    ) : (tarea.total_postulantes || 0) > 0 ? (
+                      <View style={styles.badgeApplicantsTag}>
+                        <Ionicons name="people" size={12} color={colors.accentBlue} />
+                        <Text style={styles.badgeApplicantsText}>{tarea.total_postulantes} postulante(s)</Text>
+                      </View>
+                    ) : (
+                      <Text style={styles.noApplicantsText}>Sin postulantes</Text>
+                    )}
+                  </View>
+                </TouchableOpacity>
+              ))}
             </ScrollView>
           </Pressable>
         </Pressable>
       </Modal>
 
-      {/* MODAL: COMPRA DE CRÉDITOS */}
-      <Modal
-        animationType="slide"
-        transparent={true}
-        visible={modalVisible === "creditos"}
-        onRequestClose={() => setModalVisible("ninguno")}
-      >
+      {/* SUB-MODAL: GESTIÓN DE POSTULANTES DE LA TAREA */}
+      <Modal animationType="fade" transparent={true} visible={tareaSeleccionada !== null} onRequestClose={() => setTareaSeleccionada(null)}>
+        <Pressable style={styles.subModalOverlay} onPress={() => setTareaSeleccionada(null)}>
+          <Pressable style={styles.subModalBox} onPress={(e) => e.stopPropagation()}>
+            {tareaSeleccionada && (
+              <>
+                <View style={styles.sheetHeader}>
+                  <View style={{ flex: 1, paddingRight: 8 }}>
+                    <Text style={styles.sheetSub} numberOfLines={1}>{tareaSeleccionada.titulo}</Text>
+                    <Text style={styles.sheetTitle}>
+                      {tareaSeleccionada.estado === "completado"
+                        ? "Tarea completada"
+                        : tareaSeleccionada.estado === "aceptado"
+                        ? "Trabajo en progreso"
+                        : "Postulantes"}
+                    </Text>
+                  </View>
+                  <TouchableOpacity onPress={() => setTareaSeleccionada(null)}>
+                    <Ionicons name="close" size={24} color={colors.textPrimary} />
+                  </TouchableOpacity>
+                </View>
+
+                {tareaSeleccionada.estado === "aceptado" && (
+                  <View style={styles.managementActionsRow}>
+                    <TouchableOpacity style={styles.btnFinalizarTarea} activeOpacity={0.85} onPress={() => setTareaAFinalizar(tareaSeleccionada)}>
+                      <Ionicons name="checkmark-circle" size={17} color="#ffffff" />
+                      <Text style={styles.btnFinalizarTareaText}>Finalizar y Calificar</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+
+                <ScrollView showsVerticalScrollIndicator={false}>
+                  {cargandoPostulantes ? (
+                    <ActivityIndicator size="small" color={colors.accentBlue} style={{ marginTop: 20 }} />
+                  ) : postulantesDeTarea.length === 0 ? (
+                    <View style={styles.emptyApplicantsBox}>
+                      <Ionicons name="hourglass-outline" size={36} color={colors.textMuted} />
+                      <Text style={styles.emptyApplicantsTitle}>Aún no hay postulaciones</Text>
+                    </View>
+                  ) : (
+                    postulantesDeTarea.map((post) => (
+                      <View key={post.id} style={styles.applicantCard}>
+                        <TouchableOpacity activeOpacity={0.7} style={styles.applicantHeaderTouchable} onPress={() => handleVerPerfilPostulante(post)}>
+                          <View style={styles.applicantUserRow}>
+                            <View style={styles.applicantAvatar}>
+                              {post.avatar_url ? (
+                                <Image source={{ uri: post.avatar_url }} style={{ width: "100%", height: "100%" }} />
+                              ) : (
+                                <Ionicons name="person" size={14} color={colors.textPrimary} />
+                              )}
+                            </View>
+                            <View>
+                              <View style={styles.applicantNameRow}>
+                                <Text style={styles.applicantName}>{post.nombre}</Text>
+                                <Ionicons name="chevron-forward-circle-outline" size={14} color={colors.accentBlue} />
+                              </View>
+                              <View style={styles.applicantRatingRow}>
+                                <Ionicons name="star" size={11} color="#eab308" />
+                                <Text style={styles.applicantRatingText}>{post.calificacion}</Text>
+                                <Text style={styles.applicantJobsText}>• {post.trabajos_realizados} tareas</Text>
+                              </View>
+                            </View>
+                          </View>
+                          {post.estado === "aceptado" && (
+                            <View style={styles.badgeAcceptedSmall}><Text style={styles.badgeAcceptedSmallText}>Asignado</Text></View>
+                          )}
+                        </TouchableOpacity>
+
+                        <Text style={styles.applicantMsg}>{post.mensaje}</Text>
+
+                        <View style={styles.applicantActionsRow}>
+                          {post.estado === "pendiente" && tareaSeleccionada.estado === "disponible" && (
+                            <>
+                              <TouchableOpacity style={styles.btnReject} activeOpacity={0.8} onPress={() => handleRechazar(post.id)}>
+                                <Ionicons name="close" size={15} color="#ef4444" />
+                                <Text style={styles.btnRejectText}>Rechazar</Text>
+                              </TouchableOpacity>
+                              <TouchableOpacity style={styles.btnAccept} activeOpacity={0.85} onPress={() => handleAceptar(post)}>
+                                <Ionicons name="checkmark" size={15} color="#ffffff" />
+                                <Text style={styles.btnAcceptText}>Aceptar</Text>
+                              </TouchableOpacity>
+                            </>
+                          )}
+                          {post.estado === "aceptado" && (
+                            <TouchableOpacity style={styles.btnWhatsAppApplicant} activeOpacity={0.85} onPress={() => handleAbrirWhatsApp(post.telefono, tareaSeleccionada.titulo)}>
+                              <Ionicons name="logo-whatsapp" size={16} color="#ffffff" />
+                              <Text style={styles.btnWhatsAppApplicantText}>Coordinar por WhatsApp</Text>
+                            </TouchableOpacity>
+                          )}
+                        </View>
+                      </View>
+                    ))
+                  )}
+                </ScrollView>
+              </>
+            )}
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* SUB-MODAL: PERFIL POSTULANTE */}
+      <Modal animationType="fade" transparent={true} visible={postulanteDetalle !== null} onRequestClose={() => setPostulanteDetalle(null)}>
+        <Pressable style={styles.subModalOverlay} onPress={() => setPostulanteDetalle(null)}>
+          <Pressable style={styles.applicantProfileBox} onPress={(e) => e.stopPropagation()}>
+            {postulanteDetalle && (
+              <>
+                <View style={styles.sheetHeader}>
+                  <Text style={styles.sheetTitle}>Perfil del Postulante</Text>
+                  <TouchableOpacity onPress={() => setPostulanteDetalle(null)}>
+                    <Ionicons name="close" size={22} color={colors.textPrimary} />
+                  </TouchableOpacity>
+                </View>
+
+                <View style={styles.applicantProfileHeader}>
+                  <View style={styles.applicantProfileAvatar}>
+                    {postulanteDetalle.avatar_url ? (
+                      <Image source={{ uri: postulanteDetalle.avatar_url }} style={{ width: "100%", height: "100%" }} />
+                    ) : (
+                      <Ionicons name="person" size={32} color={colors.textPrimary} />
+                    )}
+                  </View>
+                  <Text style={styles.applicantProfileName}>{postulanteDetalle.nombre}</Text>
+                  <Text style={styles.applicantProfileComuna}>{postulanteDetalle.comuna}</Text>
+                </View>
+
+                <View style={styles.applicantProfileAboutBox}>
+                  <Text style={styles.applicantProfileAboutTitle}>Sobre este postulante</Text>
+                  <Text style={styles.applicantProfileAboutText}>{postulanteDetalle.sobre_mi}</Text>
+                </View>
+
+                <View style={styles.miniTabBar}>
+                  <TouchableOpacity activeOpacity={0.7} style={styles.miniTabButton} onPress={() => setTabPostulante("resenas")}>
+                    <View style={styles.tabHeaderLabel}>
+                      <Ionicons name="star" size={13} color={tabPostulante === "resenas" ? "#eab308" : colors.textMuted} />
+                      <Text style={[styles.miniTabText, tabPostulante === "resenas" && styles.miniTabTextActive]}>
+                        Reseñas ({resenasPostulante.length})
+                      </Text>
+                    </View>
+                    {tabPostulante === "resenas" && <View style={styles.miniActiveIndicator} />}
+                  </TouchableOpacity>
+                  <TouchableOpacity activeOpacity={0.7} style={styles.miniTabButton} onPress={() => setTabPostulante("historial")}>
+                    <View style={styles.tabHeaderLabel}>
+                      <Ionicons name="briefcase" size={13} color={tabPostulante === "historial" ? colors.accentBlue : colors.textMuted} />
+                      <Text style={[styles.miniTabText, tabPostulante === "historial" && styles.miniTabTextActive]}>
+                        Historial ({historialPostulante.length})
+                      </Text>
+                    </View>
+                    {tabPostulante === "historial" && <View style={styles.miniActiveIndicator} />}
+                  </TouchableOpacity>
+                </View>
+
+                <ScrollView style={styles.tabScrollBox} showsVerticalScrollIndicator={false}>
+                  {tabPostulante === "resenas" ? (
+                    resenasPostulante.length > 0 ? (
+                      resenasPostulante.map((r) => (
+                        <View key={r.id} style={styles.reviewCard}>
+                          <View style={styles.reviewHeader}>
+                            <Text style={styles.reviewAuthor}>{r.autor}</Text>
+                            <View style={styles.starsRow}>
+                              {[...Array(r.calificacion)].map((_, i) => (
+                                <Ionicons key={i} name="star" size={11} color="#eab308" />
+                              ))}
+                            </View>
+                          </View>
+                          <Text style={styles.reviewComment}>{r.comentario}</Text>
+                          <Text style={styles.reviewDate}>{r.fecha}</Text>
+                        </View>
+                      ))
+                    ) : (
+                      <Text style={styles.emptyTabText}>No cuenta con reseñas registradas.</Text>
+                    )
+                  ) : historialPostulante.length > 0 ? (
+                    historialPostulante.map((h) => (
+                      <View key={h.id} style={styles.taskCard}>
+                        <View style={styles.taskHeader}>
+                          <View style={styles.badge}><Text style={styles.badgeText}>{h.categoria}</Text></View>
+                          <Text style={styles.taskMonto}>{h.monto}</Text>
+                        </View>
+                        <Text style={styles.taskTitle}>{h.titulo}</Text>
+                        <Text style={styles.taskDate}>{h.fecha}</Text>
+                      </View>
+                    ))
+                  ) : (
+                    <Text style={styles.emptyTabText}>No registra trabajos previos aún.</Text>
+                  )}
+                </ScrollView>
+              </>
+            )}
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* SUB-MODAL: CALIFICACIÓN */}
+      <Modal animationType="fade" transparent={true} visible={tareaAFinalizar !== null} onRequestClose={() => setTareaAFinalizar(null)}>
+        <Pressable style={styles.subModalOverlay} onPress={() => setTareaAFinalizar(null)}>
+          <Pressable style={styles.subModalBox} onPress={(e) => e.stopPropagation()}>
+            <View style={styles.sheetHeader}>
+              <Text style={styles.sheetTitle}>Finalizar Tarea</Text>
+              <TouchableOpacity onPress={() => setTareaAFinalizar(null)}>
+                <Ionicons name="close" size={24} color={colors.textPrimary} />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.reviewModalDesc}>Califica la labor realizada por el trabajador:</Text>
+            <View style={styles.starSelectRow}>
+              {[1, 2, 3, 4, 5].map((star) => (
+                <TouchableOpacity key={star} activeOpacity={0.7} onPress={() => setEstrellasCalificacion(star)}>
+                  <Ionicons name={star <= estrellasCalificacion ? "star" : "star-outline"} size={32} color="#eab308" />
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <View style={styles.reviewInputBox}>
+              <TextInput
+                style={styles.reviewInputField}
+                placeholder="Escribe tu reseña..."
+                placeholderTextColor={colors.textMuted}
+                multiline
+                numberOfLines={3}
+                value={comentarioCalificacion}
+                onChangeText={setComentarioCalificacion}
+                textAlignVertical="top"
+              />
+            </View>
+
+            <TouchableOpacity style={styles.btnConfirmarFinalizacion} activeOpacity={0.85} onPress={handleConfirmarFinalizacion} disabled={guardandoFinalizacion}>
+              {guardandoFinalizacion ? (
+                <ActivityIndicator size="small" color="#ffffff" />
+              ) : (
+                <>
+                  <Ionicons name="checkmark-done" size={18} color="#ffffff" />
+                  <Text style={styles.btnConfirmarFinalizacionText}>Confirmar y Calificar</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* MODAL 4: EDICIÓN DE PERFIL */}
+      <Modal animationType="slide" transparent={true} visible={modalEditarVisible} onRequestClose={() => setModalEditarVisible(false)}>
+        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.modalOverlay}>
+          <Pressable style={styles.modalOverlay} onPress={() => setModalEditarVisible(false)}>
+            <Pressable style={styles.modalSheet} onPress={(e) => e.stopPropagation()}>
+              <View style={styles.sheetHeader}>
+                <View style={styles.sheetTitleRow}>
+                  <Ionicons name="pencil" size={18} color={colors.accentBlue} />
+                  <Text style={styles.sheetTitle}>Editar Perfil</Text>
+                </View>
+                <TouchableOpacity onPress={() => setModalEditarVisible(false)}>
+                  <Ionicons name="close" size={24} color={colors.textPrimary} />
+                </TouchableOpacity>
+              </View>
+
+              <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 20 }}>
+                <View style={styles.editAvatarSection}>
+                  <TouchableOpacity activeOpacity={0.8} style={styles.editAvatarWrap} onPress={handlePickFoto}>
+                    {tempAvatarUri ? (
+                      <Image source={{ uri: tempAvatarUri }} style={styles.editAvatarImage} />
+                    ) : (
+                      <Ionicons name="person" size={40} color={colors.textMuted} />
+                    )}
+                    <View style={styles.cameraIconBadge}><Ionicons name="camera" size={14} color="#ffffff" /></View>
+                  </TouchableOpacity>
+                  <Text style={styles.editAvatarHint}>Toca para cambiar foto</Text>
+                </View>
+
+                <Text style={styles.inputLabel}>Nombre completo</Text>
+                <View style={styles.inputBox}>
+                  <TextInput style={styles.inputField} value={tempNombre} onChangeText={setTempNombre} placeholder="Tu nombre" placeholderTextColor={colors.textMuted} />
+                </View>
+
+                <Text style={styles.inputLabel}>Ubicación (Comuna)</Text>
+                <TouchableOpacity style={styles.dropdownSelectorBtn} activeOpacity={0.8} onPress={() => setModalComunasVisible(true)}>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                    <Ionicons name="location-outline" size={18} color={colors.accentBlue} />
+                    <Text style={styles.dropdownSelectorText}>{tempComunaNombre}</Text>
+                  </View>
+                  <Ionicons name="chevron-down" size={18} color={colors.textMuted} />
+                </TouchableOpacity>
+
+                <Text style={styles.inputLabel}>Sobre mí</Text>
+                <View style={[styles.inputBox, styles.inputBoxArea]}>
+                  <TextInput style={[styles.inputField, styles.inputFieldArea]} multiline numberOfLines={4} value={tempSobreMi} onChangeText={setTempSobreMi} placeholder="Describe tus habilidades..." placeholderTextColor={colors.textMuted} textAlignVertical="top" />
+                </View>
+
+                <View style={styles.editButtonsRow}>
+                  <TouchableOpacity style={styles.cancelBtn} onPress={() => setModalEditarVisible(false)}><Text style={styles.cancelBtnText}>Cancelar</Text></TouchableOpacity>
+                  <TouchableOpacity style={styles.saveBtn} onPress={handleGuardarPerfil} disabled={guardandoCambios}>
+                    {guardandoCambios ? <ActivityIndicator size="small" color="#ffffff" /> : <Text style={styles.saveBtnText}>Guardar</Text>}
+                  </TouchableOpacity>
+                </View>
+              </ScrollView>
+            </Pressable>
+          </Pressable>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* SUB-MODAL COMUNAS */}
+      <Modal animationType="fade" transparent={true} visible={modalComunasVisible} onRequestClose={() => setModalComunasVisible(false)}>
+        <Pressable style={styles.subModalOverlay} onPress={() => setModalComunasVisible(false)}>
+          <Pressable style={styles.dropdownModalBox} onPress={(e) => e.stopPropagation()}>
+            <View style={styles.sheetHeader}>
+              <Text style={styles.sheetTitle}>Selecciona tu Comuna</Text>
+              <TouchableOpacity onPress={() => setModalComunasVisible(false)}><Ionicons name="close" size={22} color={colors.textPrimary} /></TouchableOpacity>
+            </View>
+            <FlatList
+              data={comunasDisponibles}
+              keyExtractor={(item) => item.id.toString()}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={[styles.comunaItem, tempComunaId === item.id && styles.comunaItemActive]}
+                  onPress={() => {
+                    setTempComunaId(item.id);
+                    setTempComunaNombre(item.nombre);
+                    setModalComunasVisible(false);
+                  }}
+                >
+                  <Text style={[styles.comunaItemText, tempComunaId === item.id && styles.comunaItemTextActive]}>{item.nombre}</Text>
+                  {tempComunaId === item.id && <Ionicons name="checkmark" size={18} color={colors.accentBlue} />}
+                </TouchableOpacity>
+              )}
+            />
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* MODAL 5: CRÉDITOS */}
+      <Modal animationType="slide" transparent={true} visible={modalVisible === "creditos"} onRequestClose={() => setModalVisible("ninguno")}>
         <Pressable style={styles.modalOverlay} onPress={() => setModalVisible("ninguno")}>
           <Pressable style={styles.modalSheet} onPress={(e) => e.stopPropagation()}>
             <View style={styles.sheetHeader}>
@@ -749,25 +896,23 @@ export default function PerfilScreen() {
                 <Ionicons name="sparkles" size={20} color="#eab308" />
                 <Text style={styles.sheetTitle}>Tus Créditos</Text>
               </View>
-              <TouchableOpacity onPress={() => setModalVisible("ninguno")}>
-                <Ionicons name="close" size={24} color={colors.textPrimary} />
-              </TouchableOpacity>
+              <TouchableOpacity onPress={() => setModalVisible("ninguno")}><Ionicons name="close" size={24} color={colors.textPrimary} /></TouchableOpacity>
             </View>
-
             <View style={styles.balanceCard}>
               <Text style={styles.balanceLabel}>Saldo disponible</Text>
-              <Text style={styles.balanceNumber}>{creditosActuales} créditos</Text>
-              <Text style={styles.balanceSubtext}>
-                Usa tus créditos para destacar publicaciones en el inicio y aparecer con prioridad en el mapa.
-              </Text>
+              <Text style={styles.balanceNumber}>{perfil.creditos} créditos</Text>
+              <Text style={styles.balanceSubtext}>Usa créditos para destacar tus ofertas en la comunidad.</Text>
             </View>
-
             {PAQUETES_CREDITOS.map((pack) => (
               <TouchableOpacity
                 key={pack.id}
                 activeOpacity={0.8}
                 style={[styles.packageCard, pack.destacado && styles.packageCardPopular]}
-                onPress={() => handleComprarPaquete(pack)}
+                onPress={() => {
+                  setPerfil((prev) => ({ ...prev, creditos: prev.creditos + pack.creditos }));
+                  setModalVisible("ninguno");
+                  Alert.alert("¡Compra simulada!", `Añadiste ${pack.creditos} créditos.`);
+                }}
               >
                 <View style={styles.packageInfo}>
                   <View style={styles.packageCreditsRow}>
@@ -776,9 +921,7 @@ export default function PerfilScreen() {
                   </View>
                   <Text style={styles.packageDesc}>{pack.desc}</Text>
                 </View>
-                <View style={styles.buyButtonWrap}>
-                  <Text style={styles.packagePrice}>{pack.precio}</Text>
-                </View>
+                <View style={styles.buyButtonWrap}><Text style={styles.packagePrice}>{pack.precio}</Text></View>
               </TouchableOpacity>
             ))}
           </Pressable>

@@ -337,6 +337,12 @@ export const styles = StyleSheet.create({
     fontWeight: "700",
     fontSize: 14,
   },
+  subModalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.75)",
+    justifyContent: "center",
+    paddingHorizontal: 20,
+  },
   dropdownModalBox: {
     backgroundColor: colors.surface,
     borderRadius: 20,
@@ -345,12 +351,6 @@ export const styles = StyleSheet.create({
     maxHeight: "65%",
     borderWidth: 1,
     borderColor: colors.border,
-  },
-  subModalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.75)",
-    justifyContent: "center",
-    paddingHorizontal: 20,
   },
   comunaItem: {
     flexDirection: "row",
@@ -416,19 +416,6 @@ export const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
     marginBottom: 6,
-  },
-  reviewUserRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  reviewAvatar: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: colors.surface,
-    alignItems: "center",
-    justifyContent: "center",
   },
   reviewAuthor: {
     fontSize: 13,
@@ -678,6 +665,7 @@ export const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     alignItems: "center",
     justifyContent: "center",
+    overflow: "hidden",
   },
   applicantNameRow: {
     flexDirection: "row",
@@ -794,6 +782,7 @@ export const styles = StyleSheet.create({
     marginBottom: 6,
     borderWidth: 1,
     borderColor: colors.border,
+    overflow: "hidden",
   },
   applicantProfileName: {
     fontSize: 16,
@@ -863,63 +852,6 @@ export const styles = StyleSheet.create({
     maxHeight: 140,
     marginBottom: 10,
   },
-  miniReviewCard: {
-    backgroundColor: colors.surfaceLight,
-    borderRadius: 10,
-    padding: 8,
-    marginBottom: 6,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  miniReviewHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 2,
-  },
-  miniReviewAuthor: {
-    fontSize: 11,
-    fontWeight: "700",
-    color: colors.textPrimary,
-  },
-  miniReviewComment: {
-    fontSize: 11,
-    color: colors.textSecondary,
-    lineHeight: 15,
-  },
-  miniReviewDate: {
-    fontSize: 9,
-    color: colors.textMuted,
-    marginTop: 2,
-  },
-  miniHistoryCard: {
-    backgroundColor: colors.surfaceLight,
-    borderRadius: 10,
-    padding: 8,
-    marginBottom: 6,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  miniHistoryHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  miniHistoryTitle: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: colors.textPrimary,
-  },
-  miniHistoryMonto: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: colors.accentGreen,
-  },
-  miniHistoryDate: {
-    fontSize: 10,
-    color: colors.textSecondary,
-    marginTop: 2,
-  },
   emptyTabText: {
     fontSize: 11,
     color: colors.textMuted,
@@ -951,21 +883,13 @@ export const styles = StyleSheet.create({
     height: 80,
     borderWidth: 1,
     borderColor: colors.border,
-    marginBottom: 10,
+    marginBottom: 16,
   },
   reviewInputField: {
     color: colors.textPrimary,
     fontSize: 13,
     paddingVertical: 0,
     height: "100%",
-  },
-  reviewModalNotice: {
-    fontSize: 11,
-    color: colors.textMuted,
-    fontStyle: "italic",
-    textAlign: "center",
-    lineHeight: 15,
-    marginBottom: 16,
   },
   btnConfirmarFinalizacion: {
     flexDirection: "row",
@@ -1008,12 +932,6 @@ export const styles = StyleSheet.create({
     textAlign: "center",
     lineHeight: 15,
   },
-  packagesTitle: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: colors.textPrimary,
-    marginBottom: 10,
-  },
   packageCard: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -1024,25 +942,10 @@ export const styles = StyleSheet.create({
     marginBottom: 10,
     borderWidth: 1,
     borderColor: colors.border,
-    position: "relative",
   },
   packageCardPopular: {
     borderColor: "#eab308",
     backgroundColor: "rgba(234, 179, 8, 0.05)",
-  },
-  popularBadge: {
-    position: "absolute",
-    top: -9,
-    right: 14,
-    backgroundColor: "#eab308",
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-    borderRadius: 6,
-  },
-  popularBadgeText: {
-    fontSize: 9,
-    fontWeight: "800",
-    color: "#000000",
   },
   packageInfo: {
     flex: 1,
@@ -1072,5 +975,5 @@ export const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "700",
     color: "#ffffff",
-  }
+  },
 });
