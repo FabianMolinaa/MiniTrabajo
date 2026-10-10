@@ -1,73 +1,106 @@
 import { decode } from 'base64-arraybuffer';
 import { supabase } from '../services/supabase';
 
-export const COSTO_DESTACAR = 5;
-export const MONTO_MINIMO_CLP = 5000;
+export const COSTO_DESTACAR = 2;
 
-export function limpiarMontoChileno(montoStr: string): number {
-  const limpio = parseInt(montoStr.replace(/[^0-9]/g, ''), 10);
-  return isNaN(limpio) ? 0 : limpio;
-}
+// Límites geográficos aproximados de la Región Metropolitana
+export const LIMITES_RM = {
+  LAT_MIN: -34.30,
+  LAT_MAX: -32.90,
+  LNG_MIN: -71.80,
+  LNG_MAX: -69.75,
+};
 
-export function formatearMonedaCLP(monto: number): string {
+/**
+ * Comprueba si unas coordenadas dadas caen dentro de la Región Metropolitana
+ */
+export const esUbicacionEnRM = (lat: number, lng: number): boolean => {
+  return (
+    lat >= LIMITES_RM.LAT_MIN &&
+    lat <= LIMITES_RM.LAT_MAX &&
+    lng >= LIMITES_RM.LNG_MIN &&
+    lng <= LIMITES_RM.LNG_MAX
+  );
+};
+
+export const limpiarMontoChileno = (montoTexto: string): number => {
+  const limpio = montoTexto.replace(/[^0-9]/g, '');
+  return parseInt(limpio, 10) || 0;
+};
+
+export const formatearMonedaCLP = (monto: number): string => {
   return `$${monto.toLocaleString('es-CL')}`;
-}
+};
 
-export function validarFormularioPublicar(
+export const validarFormularioPublicar = (
   titulo: string,
   monto: string,
   descripcion: string,
   categoriaId?: number,
   comunaId?: number,
-  destacar?: boolean,
-  creditosDisponibles: number = 0
-): { valido: boolean; error?: string } {
-  const titLimpio = titulo.trim();
-  const descLimpia = descripcion.trim();
-  const montoNumerico = limpiarMontoChileno(monto);
-
-  if (!titLimpio) return { valido: false, error: 'El título del trabajo es obligatorio.' };
-  if (titLimpio.length < 6) return { valido: false, error: 'El título debe tener al menos 6 caracteres.' };
-  if (titLimpio.length > 80) return { valido: false, error: 'El título no puede superar los 80 caracteres.' };
-  if (!categoriaId) return { valido: false, error: 'Debes seleccionar una categoría.' };
-  if (!monto.trim() || montoNumerico <= 0) return { valido: false, error: 'Debes indicar el pago ofrecido.' };
-  if (montoNumerico < MONTO_MINIMO_CLP) {
-    return { valido: false, error: `El monto mínimo permitido es de ${formatearMonedaCLP(MONTO_MINIMO_CLP)}.` };
+  destacar: boolean = false,
+  creditosDisponibles: number = 0,
+  coordenadas?: { latitude: number; longitude: number } | null
+): { valido: boolean; error?: string } => {
+  if (!titulo.trim() || titulo.trim().length < 6) {
+    return { valido: false, error: 'El título debe tener al menos 6 caracteres.' };
   }
-  if (!comunaId) return { valido: false, error: 'Debes seleccionar una comuna.' };
-  if (!descLimpia) return { valido: false, error: 'La descripción es obligatoria.' };
-  if (descLimpia.length < 20) return { valido: false, error: 'Detalla la tarea con al menos 20 caracteres.' };
+
+  if (!categoriaId) {
+    return { valido: false, error: 'Debes seleccionar una categoría.' };
+  }
+
+  const montoNum = limpiarMontoChileno(monto);
+  if (!montoNum || montoNum < 5000) {
+    return { valido: false, error: 'El pago mínimo ofrecido debe ser de al menos $5.000 CLP.' };
+  }
+
+  if (!comunaId) {
+    return { valido: false, error: 'Debes seleccionar una comuna dentro de la Región Metropolitana.' };
+  }
+
+  // Validación de zona si se adjuntaron coordenadas
+  if (coordenadas && !esUbicacionEnRM(coordenadas.latitude, coordenadas.longitude)) {
+    return {
+      valido: false,
+      error: 'La ubicación detectada no pertenece a la Región Metropolitana (Santiago).',
+    };
+  }
+
+  if (!descripcion.trim() || descripcion.trim().length < 20) {
+    return { valido: false, error: 'La descripción debe tener al menos 20 caracteres.' };
+  }
 
   if (destacar && creditosDisponibles < COSTO_DESTACAR) {
     return {
       valido: false,
-      error: `Saldo insuficiente: requieres ${COSTO_DESTACAR} créditos y cuentas con ${creditosDisponibles}.`,
+      error: `No tienes suficientes créditos (${creditosDisponibles}/${COSTO_DESTACAR}).`,
     };
   }
 
   return { valido: true };
-}
+};
 
-export async function subirImagenTrabajoStorage(base64Data: string, userId: string): Promise<string | null> {
+export const subirImagenTrabajoStorage = async (
+  base64: string,
+  userId: string
+): Promise<string | null> => {
   try {
     const fileName = `${userId}/${Date.now()}-${Math.random().toString(36).substring(7)}.jpg`;
+    const arrayBuffer = decode(base64);
 
     const { error: uploadError } = await supabase.storage
       .from('trabajos')
-      .upload(fileName, decode(base64Data), {
+      .upload(fileName, arrayBuffer, {
         contentType: 'image/jpeg',
-        upsert: true,
+        upsert: false,
       });
 
-    if (uploadError) {
-      console.error('Error al subir imagen al bucket trabajos:', uploadError);
-      return null;
-    }
+    if (uploadError) return null;
 
-    const { data } = supabase.storage.from('trabajos').getPublicUrl(fileName);
-    return data.publicUrl;
-  } catch (err) {
-    console.error('Error procesando imagen para upload:', err);
+    const { data: urlData } = supabase.storage.from('trabajos').getPublicUrl(fileName);
+    return urlData.publicUrl;
+  } catch {
     return null;
   }
-}
+};

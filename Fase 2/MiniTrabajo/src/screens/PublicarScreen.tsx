@@ -14,10 +14,12 @@ import {
   Image,
   ActivityIndicator,
   RefreshControl,
+  Alert,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+import * as Location from 'expo-location';
 import { colors } from '../theme/colors';
 import { styles } from '../styles/PublicarStyles';
 import { supabase } from '../services/supabase';
@@ -27,6 +29,7 @@ import {
   formatearMonedaCLP,
   validarFormularioPublicar,
   subirImagenTrabajoStorage,
+  esUbicacionEnRM,
 } from '../utils/functionsPublicar';
 
 interface CategoriaItem {
@@ -51,6 +54,7 @@ interface ResumenPublicacion {
   monto: number;
   comuna: string;
   destacado: boolean;
+  coordenadas?: { latitude: number; longitude: number } | null;
 }
 
 const URGENCIAS = ['Hoy mismo', 'Mañana', 'Este fin de semana', 'A coordinar'];
@@ -70,6 +74,11 @@ export default function PublicarScreen() {
 
   const [listaComunas, setListaComunas] = useState<ComunaItem[]>([]);
   const [comunaSeleccionada, setComunaSeleccionada] = useState<ComunaItem | null>(null);
+
+  // Estados de GPS
+  const [coordenadas, setCoordenadas] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [obteniendoGPS, setObteniendoGPS] = useState(false);
+  const [infoGPS, setInfoGPS] = useState<string | null>(null);
 
   const [creditosDisponibles, setCreditosDisponibles] = useState(10);
   const [destacarConCreditos, setDestacarConCreditos] = useState(false);
@@ -92,6 +101,7 @@ export default function PublicarScreen() {
         setCategoriaSeleccionada((prev) => prev ?? catData[0]);
       }
 
+      // Cargamos únicamente las comunas pertenecientes a la Región Metropolitana
       const { data: comData, error: errCom } = await supabase
         .from('comunas')
         .select('id, nombre')
@@ -129,6 +139,8 @@ export default function PublicarScreen() {
     setImagenes([]);
     setUrgencia('Hoy mismo');
     setDestacarConCreditos(false);
+    setCoordenadas(null);
+    setInfoGPS(null);
     setMensajeError(null);
 
     await cargarCatalogosYCreditos();
@@ -158,7 +170,7 @@ export default function PublicarScreen() {
       allowsEditing: true,
       aspect: [4, 3],
       quality: 0.6,
-      base64: true, // <-- Entrega el Base64 como se hizo en Perfil
+      base64: true,
     });
 
     if (!result.canceled && result.assets[0]?.uri && result.assets[0]?.base64) {
@@ -172,6 +184,72 @@ export default function PublicarScreen() {
 
   const handleRemoveImage = (indexToRemove: number) => {
     setImagenes((prev) => prev.filter((_, idx) => idx !== indexToRemove));
+  };
+
+  const handleObtenerUbicacionGPS = async () => {
+    setMensajeError(null);
+    setObteniendoGPS(true);
+
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert(
+          'Permiso denegado',
+          'Permite el acceso a tu ubicación para obtener las coordenadas de la labor.'
+        );
+        setObteniendoGPS(false);
+        return;
+      }
+
+      const posicion = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
+
+      const { latitude, longitude } = posicion.coords;
+
+      // 1. Verificación por Bounding Box de la RM
+      if (!esUbicacionEnRM(latitude, longitude)) {
+        Alert.alert(
+          'Zona no habilitada',
+          'Actualmente MiniTrabajo opera exclusivamente en la Región Metropolitana (Santiago). ¡Pronto llegaremos a tu región!'
+        );
+        setCoordenadas(null);
+        setInfoGPS(null);
+        setObteniendoGPS(false);
+        return;
+      }
+
+      // 2. Geocodificación inversa para obtener nombre de calle y comuna
+      const geocodigos = await Location.reverseGeocodeAsync({ latitude, longitude });
+
+      if (geocodigos && geocodigos.length > 0) {
+        const direccion = geocodigos[0];
+        const subregion = (direccion.subregion || direccion.city || direccion.district || '').toLowerCase();
+
+        // Auto-seleccionar comuna si coincide con el catálogo
+        const comunaCoincidente = listaComunas.find((c) =>
+          subregion.includes(c.nombre.toLowerCase()) || c.nombre.toLowerCase().includes(subregion)
+        );
+
+        if (comunaCoincidente) {
+          setComunaSeleccionada(comunaCoincidente);
+        }
+
+        const detalleTexto = direccion.street
+          ? `${direccion.street} ${direccion.streetNumber || ''}, ${direccion.subregion || direccion.city || ''}`
+          : `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
+
+        setInfoGPS(detalleTexto.trim());
+      } else {
+        setInfoGPS(`${latitude.toFixed(4)}, ${longitude.toFixed(4)}`);
+      }
+
+      setCoordenadas({ latitude, longitude });
+    } catch {
+      Alert.alert('Error GPS', 'No pudimos obtener la señal de GPS. Asegúrate de tener la ubicación encendida.');
+    } finally {
+      setObteniendoGPS(false);
+    }
   };
 
   const handleToggleDestacar = (value: boolean) => {
@@ -196,7 +274,8 @@ export default function PublicarScreen() {
       categoriaSeleccionada?.id,
       comunaSeleccionada?.id,
       destacarConCreditos,
-      creditosDisponibles
+      creditosDisponibles,
+      coordenadas
     );
 
     if (!validacion.valido) {
@@ -215,13 +294,12 @@ export default function PublicarScreen() {
         return;
       }
 
-      // Sube a Supabase Storage con decodificación Base64 directa
       const uploadPromises = imagenes.map((img) => subirImagenTrabajoStorage(img.base64, user.id));
       const urlsPublicas = (await Promise.all(uploadPromises)).filter(Boolean) as string[];
 
       const montoNumerico = limpiarMontoChileno(monto);
 
-      const { error: insertError } = await supabase.from('trabajos').insert({
+      const nuevoTrabajo: any = {
         user_id: user.id,
         titulo: titulo.trim(),
         descripcion: descripcion.trim(),
@@ -232,7 +310,14 @@ export default function PublicarScreen() {
         destacado: destacarConCreditos,
         estado: 'disponible',
         imagenes: urlsPublicas,
-      });
+      };
+
+      if (coordenadas) {
+        nuevoTrabajo.latitud = coordenadas.latitude;
+        nuevoTrabajo.longitud = coordenadas.longitude;
+      }
+
+      const { error: insertError } = await supabase.from('trabajos').insert(nuevoTrabajo);
 
       if (insertError) {
         setMensajeError(`Error en el servidor: ${insertError.message}`);
@@ -259,12 +344,15 @@ export default function PublicarScreen() {
         monto: montoNumerico,
         comuna: comunaSeleccionada!.nombre,
         destacado: destacarConCreditos,
+        coordenadas,
       });
 
       setTitulo('');
       setMonto('');
       setDescripcion('');
       setImagenes([]);
+      setCoordenadas(null);
+      setInfoGPS(null);
       setDestacarConCreditos(false);
       setMensajeError(null);
     } catch (e: any) {
@@ -406,22 +494,55 @@ export default function PublicarScreen() {
         </Text>
 
         <Text style={styles.label}>
-          Comuna <Text style={styles.requiredAsterisk}>*</Text>
+          Ubicación del trabajo (Región Metropolitana) <Text style={styles.requiredAsterisk}>*</Text>
         </Text>
-        <TouchableOpacity
-          style={styles.dropdownButton}
-          activeOpacity={0.7}
-          onPress={() => setModalVisible('comuna')}
-          disabled={cargandoCatalogos}
-        >
-          <View style={styles.dropdownInner}>
-            <Ionicons name="navigate-outline" size={18} color={colors.accentBlue} />
-            <Text style={styles.dropdownText}>
-              {comunaSeleccionada?.nombre || 'Cargando comunas...'}
-            </Text>
+        <View style={styles.locationRow}>
+          <TouchableOpacity
+            style={[styles.dropdownButton, styles.dropdownButtonFlex]}
+            activeOpacity={0.7}
+            onPress={() => setModalVisible('comuna')}
+            disabled={cargandoCatalogos}
+          >
+            <View style={styles.dropdownInner}>
+              <Ionicons name="navigate-outline" size={18} color={colors.accentBlue} />
+              <Text style={styles.dropdownText}>
+                {comunaSeleccionada?.nombre || 'Cargando comunas...'}
+              </Text>
+            </View>
+            <Ionicons name="chevron-down" size={18} color={colors.textMuted} />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.gpsButton, coordenadas && styles.gpsButtonActive]}
+            activeOpacity={0.8}
+            onPress={handleObtenerUbicacionGPS}
+            disabled={obteniendoGPS}
+          >
+            {obteniendoGPS ? (
+              <ActivityIndicator size="small" color={colors.accentBlue} />
+            ) : (
+              <Ionicons
+                name={coordenadas ? 'locate' : 'locate-outline'}
+                size={22}
+                color={coordenadas ? colors.accentBlue : colors.textPrimary}
+              />
+            )}
+          </TouchableOpacity>
+        </View>
+
+        {coordenadas && (
+          <View style={styles.gpsBadge}>
+            <View style={styles.gpsBadgeContent}>
+              <Ionicons name="location" size={14} color={colors.accentBlue} />
+              <Text style={styles.gpsBadgeText} numberOfLines={1}>
+                {infoGPS ? `Ubicación GPS: ${infoGPS}` : 'GPS RM fijado'}
+              </Text>
+            </View>
+            <TouchableOpacity onPress={() => { setCoordenadas(null); setInfoGPS(null); }}>
+              <Ionicons name="close-circle" size={16} color={colors.accentBlue} />
+            </TouchableOpacity>
           </View>
-          <Ionicons name="chevron-down" size={18} color={colors.textMuted} />
-        </TouchableOpacity>
+        )}
 
         <Text style={styles.label}>¿Para cuándo lo necesitas?</Text>
         <View style={styles.chipsRow}>
@@ -521,7 +642,7 @@ export default function PublicarScreen() {
           <Pressable style={styles.modalBox} onPress={(e) => e.stopPropagation()}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>
-                {modalVisible === 'categoria' ? 'Seleccionar Categoría' : 'Seleccionar Comuna'}
+                {modalVisible === 'categoria' ? 'Seleccionar Categoría' : 'Seleccionar Comuna (RM)'}
               </Text>
               <TouchableOpacity onPress={() => setModalVisible('ninguno')}>
                 <Ionicons name="close-circle" size={22} color={colors.textMuted} />
@@ -620,6 +741,14 @@ export default function PublicarScreen() {
                   <Text style={styles.summaryKey}>Comuna:</Text>
                   <Text style={styles.summaryVal}>{resumenExito.comuna}</Text>
                 </View>
+                {resumenExito.coordenadas && (
+                  <View style={styles.summaryRow}>
+                    <Text style={styles.summaryKey}>GPS RM:</Text>
+                    <Text style={[styles.summaryVal, { color: colors.accentBlue }]}>
+                      {resumenExito.coordenadas.latitude.toFixed(4)}, {resumenExito.coordenadas.longitude.toFixed(4)}
+                    </Text>
+                  </View>
+                )}
                 <View style={styles.summaryRow}>
                   <Text style={styles.summaryKey}>Pago referencial:</Text>
                   <Text style={[styles.summaryVal, { color: colors.accentGreen }]}>

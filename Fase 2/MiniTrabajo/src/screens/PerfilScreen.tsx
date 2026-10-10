@@ -8,7 +8,6 @@ import {
   Modal,
   Pressable,
   TextInput,
-  Alert,
   Image,
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -35,12 +34,26 @@ import {
   fetchResenasUsuario,
   fetchHistorialTrabajosHechos,
   aceptarPostulante,
+  cancelarAcuerdoTrabajador,
+  editarMiPublicacion,
+  eliminarMiPublicacion,
   finalizarYCalificarTarea,
 } from "../utils/functionsPerfil";
 
 interface ComunaItem {
   id: number;
   nombre: string;
+}
+
+interface AlertaPersonalizada {
+  visible: boolean;
+  titulo: string;
+  mensaje: string;
+  tipo: 'exito' | 'error' | 'confirmar' | 'info';
+  textoConfirmar?: string;
+  textoCancelar?: string;
+  onConfirmar?: () => void;
+  onCancelar?: () => void;
 }
 
 const PAQUETES_CREDITOS = [
@@ -65,7 +78,7 @@ export default function PerfilScreen() {
     trabajos_realizados: 0,
     creditos: 10,
     comuna_id: 1,
-    comuna_nombre: "Santiago Centro",
+    comuna_nombre: "Santiago",
   });
 
   // Listas
@@ -89,20 +102,61 @@ export default function PerfilScreen() {
   const [comentarioCalificacion, setComentarioCalificacion] = useState("");
   const [guardandoFinalizacion, setGuardandoFinalizacion] = useState(false);
 
-  // Modales
+  // Menú de opciones (3 puntos)
+  const [tareaOpciones, setTareaOpciones] = useState<MiPublicacion | null>(null);
+  const [modalEditarTareaVisible, setModalEditarTareaVisible] = useState(false);
+  const [editTituloTarea, setEditTituloTarea] = useState("");
+  const [editDescripcionTarea, setEditDescripcionTarea] = useState("");
+  const [editMontoTarea, setEditMontoTarea] = useState("");
+  const [guardandoEdicionTarea, setGuardandoEdicionTarea] = useState(false);
+
+  // Modales generales
   const [tabPublicaciones, setTabPublicaciones] = useState<"activas" | "completadas">("activas");
   const [modalVisible, setModalVisible] = useState<"ninguno" | "resenas" | "historial" | "publicaciones" | "creditos">("ninguno");
   const [modalEditarVisible, setModalEditarVisible] = useState(false);
   const [modalComunasVisible, setModalComunasVisible] = useState(false);
   const [guardandoCambios, setGuardandoCambios] = useState(false);
 
-  // Form edición
+  // Form edición perfil
   const [tempNombre, setTempNombre] = useState("");
   const [tempSobreMi, setTempSobreMi] = useState("");
   const [tempAvatarUri, setTempAvatarUri] = useState<string | null>(null);
   const [tempAvatarBase64, setTempAvatarBase64] = useState<string | null>(null);
   const [tempComunaId, setTempComunaId] = useState<number>(1);
-  const [tempComunaNombre, setTempComunaNombre] = useState("Santiago Centro");
+  const [tempComunaNombre, setTempComunaNombre] = useState("Santiago");
+
+  // Alerta Personalizada (Dark Theme)
+  const [alerta, setAlerta] = useState<AlertaPersonalizada>({
+    visible: false,
+    titulo: "",
+    mensaje: "",
+    tipo: "info",
+  });
+
+  const dispararAlerta = (
+    titulo: string,
+    mensaje: string,
+    tipo: 'exito' | 'error' | 'confirmar' | 'info' = 'info',
+    onConfirmar?: () => void,
+    textoConfirmar: string = 'Entendido',
+    textoCancelar?: string,
+    onCancelar?: () => void
+  ) => {
+    setAlerta({
+      visible: true,
+      titulo,
+      mensaje,
+      tipo,
+      textoConfirmar,
+      textoCancelar,
+      onConfirmar,
+      onCancelar,
+    });
+  };
+
+  const cerrarAlerta = () => {
+    setAlerta((prev) => ({ ...prev, visible: false }));
+  };
 
   const cargarDatos = useCallback(async () => {
     try {
@@ -167,12 +221,16 @@ export default function PerfilScreen() {
     if (!tareaSeleccionada || !usuarioId) return;
     try {
       await aceptarPostulante(tareaSeleccionada.id, postulante.id, postulante.postulante_id);
-      Alert.alert("¡Postulante Aceptado!", "El trabajo quedó asignado. Ya puedes coordinar por WhatsApp.");
       await cargarDatos();
       await handleSeleccionarTarea({ ...tareaSeleccionada, estado: "aceptado", trabajador_id: postulante.postulante_id });
       if (postulanteDetalle) setPostulanteDetalle({ ...postulanteDetalle, estado: "aceptado" });
+      dispararAlerta(
+        "¡Postulante Aceptado!",
+        "El trabajo quedó asignado. Ya puedes coordinar los detalles por WhatsApp.",
+        "exito"
+      );
     } catch (err: any) {
-      Alert.alert("Error", err.message || "No se pudo aceptar al postulante.");
+      dispararAlerta("Error", err.message || "No se pudo aceptar al postulante.", "error");
     }
   };
 
@@ -182,12 +240,116 @@ export default function PerfilScreen() {
       setPostulantesDeTarea((prev) => prev.map((p) => (p.id === postulanteId ? { ...p, estado: "rechazado" } : p)));
       if (postulanteDetalle?.id === postulanteId) setPostulanteDetalle(null);
     } catch (err: any) {
-      Alert.alert("Error", err.message || "No se pudo rechazar al postulante.");
+      dispararAlerta("Error", err.message || "No se pudo rechazar al postulante.", "error");
     }
   };
 
+  const handleCancelarAcuerdo = () => {
+    if (!tareaSeleccionada) return;
+
+    dispararAlerta(
+      "Cancelar acuerdo",
+      "¿No lograron coordinar por WhatsApp? Si cancelas el acuerdo, la tarea volverá a estar disponible para recibir solicitudes o aceptar a otro postulante.",
+      "confirmar",
+      async () => {
+        try {
+          await cancelarAcuerdoTrabajador(tareaSeleccionada.id, tareaSeleccionada.trabajador_id);
+          await cargarDatos();
+          setTareaSeleccionada(null);
+          dispararAlerta(
+            "Acuerdo cancelado",
+            "La tarea volvió a quedar libre y disponible en el muro de búsqueda.",
+            "exito"
+          );
+        } catch (err: any) {
+          dispararAlerta("Error", err.message || "No se pudo cancelar el acuerdo.", "error");
+        }
+      },
+      "Sí, cancelar acuerdo",
+      "Volver"
+    );
+  };
+
+  const handleAbrirOpcionesTarea = (tarea: MiPublicacion) => {
+    if (tarea.estado === "aceptado") {
+      dispararAlerta(
+        "Tarea en progreso",
+        "Esta publicación tiene un trabajador aceptado. Si no lograron coordinar, primero debes cancelar el acuerdo abriendo la tarjeta.",
+        "info"
+      );
+      return;
+    }
+    setTareaOpciones(tarea);
+  };
+
+  const handleIniciarEdicionTarea = () => {
+    if (!tareaOpciones) return;
+    setEditTituloTarea(tareaOpciones.titulo);
+    setEditDescripcionTarea(tareaOpciones.descripcion);
+    setEditMontoTarea(tareaOpciones.montoRaw.toString());
+    setModalEditarTareaVisible(true);
+  };
+
+  const handleGuardarEdicionTarea = async () => {
+    if (!tareaOpciones) return;
+    const montoNum = parseInt(editMontoTarea.replace(/[^0-9]/g, ""), 10) || 0;
+
+    if (editTituloTarea.trim().length < 6) {
+      dispararAlerta("Validación", "El título debe tener al menos 6 caracteres.", "error");
+      return;
+    }
+    if (editDescripcionTarea.trim().length < 20) {
+      dispararAlerta("Validación", "La descripción debe tener al menos 20 caracteres.", "error");
+      return;
+    }
+    if (montoNum < 5000) {
+      dispararAlerta("Validación", "El pago mínimo ofrecido debe ser de $5.000 CLP.", "error");
+      return;
+    }
+
+    setGuardandoEdicionTarea(true);
+    try {
+      await editarMiPublicacion(tareaOpciones.id, {
+        titulo: editTituloTarea,
+        descripcion: editDescripcionTarea,
+        monto: montoNum,
+      });
+
+      setModalEditarTareaVisible(false);
+      setTareaOpciones(null);
+      await cargarDatos();
+      dispararAlerta("¡Publicación actualizada!", "Los cambios se guardaron con éxito.", "exito");
+    } catch (err: any) {
+      dispararAlerta("Error", err.message || "No se pudo actualizar la tarea.", "error");
+    } finally {
+      setGuardandoEdicionTarea(false);
+    }
+  };
+
+  const handleEliminarTareaOpciones = () => {
+    if (!tareaOpciones) return;
+
+    dispararAlerta(
+      "Eliminar publicación",
+      "¿Seguro que deseas eliminar esta tarea de forma definitiva? Esta acción no se puede deshacer.",
+      "confirmar",
+      async () => {
+        try {
+          await eliminarMiPublicacion(tareaOpciones.id);
+          setTareaOpciones(null);
+          await cargarDatos();
+          dispararAlerta("Publicación eliminada", "La tarea ha sido dada de baja.", "exito");
+        } catch (err: any) {
+          dispararAlerta("No se pudo eliminar", err.message, "error");
+        }
+      },
+      "Sí, eliminar",
+      "Cancelar"
+    );
+  };
+
   const handleConfirmarFinalizacion = async () => {
-    if (!tareaAFinalizar || !usuarioId || !tareaAFinalizar.trabajador_id) return;
+    if (!tareaAFinalizar || !usuarioId) return;
     setGuardandoFinalizacion(true);
     try {
       await finalizarYCalificarTarea(
@@ -197,14 +359,14 @@ export default function PerfilScreen() {
         estrellasCalificacion,
         comentarioCalificacion
       );
-      Alert.alert("¡Tarea Finalizada!", "Se registró el cierre y la calificación con éxito.");
       setTareaAFinalizar(null);
       setTareaSeleccionada(null);
       setComentarioCalificacion("");
       setEstrellasCalificacion(5);
       await cargarDatos();
+      dispararAlerta("¡Tarea Finalizada!", "Se registró el cierre y la calificación con éxito.", "exito");
     } catch (err: any) {
-      Alert.alert("Error", err.message || "No se pudo cerrar la tarea.");
+      dispararAlerta("Error al calificar", err.message || "No se pudo cerrar la tarea.", "error");
     } finally {
       setGuardandoFinalizacion(false);
     }
@@ -213,7 +375,7 @@ export default function PerfilScreen() {
   const handlePickFoto = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== "granted") {
-      Alert.alert("Permiso denegado", "Se requiere acceso a la galería.");
+      dispararAlerta("Permiso denegado", "Se requiere acceso a la galería para cambiar la foto.", "error");
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -221,7 +383,7 @@ export default function PerfilScreen() {
       allowsEditing: true,
       aspect: [1, 1],
       quality: 0.6,
-      base64: true, // <-- Base64 directo de la galería sin usar expo-file-system
+      base64: true,
     });
 
     if (!result.canceled && result.assets[0]?.uri) {
@@ -242,22 +404,18 @@ export default function PerfilScreen() {
           upsert: true,
         });
 
-      if (uploadError) {
-        console.error("Error al subir avatar:", uploadError);
-        return null;
-      }
+      if (uploadError) return null;
 
       const { data } = supabase.storage.from("avatars").getPublicUrl(fileName);
       return data.publicUrl;
-    } catch (err) {
-      console.error("Error subiendo avatar:", err);
+    } catch {
       return null;
     }
   };
 
-  const handleGuardarPerfil = async () => {
+const handleGuardarPerfil = async () => {
     if (!tempNombre.trim() || !usuarioId) {
-      Alert.alert("Atención", "El nombre no puede estar vacío.");
+      dispararAlerta("Atención", "El nombre no puede estar vacío.", "error");
       return;
     }
     setGuardandoCambios(true);
@@ -271,10 +429,12 @@ export default function PerfilScreen() {
         }
       }
 
+      // Actualizamos 'nombre' y 'nombre_completo'
       const { error } = await supabase
         .from("perfiles")
         .update({
           nombre: tempNombre.trim(),
+          nombre_completo: tempNombre.trim(),
           sobre_mi: tempSobreMi.trim(),
           avatar_url: finalAvatarUrl,
           comuna_id: tempComunaId,
@@ -285,9 +445,9 @@ export default function PerfilScreen() {
       setModalEditarVisible(false);
       setTempAvatarBase64(null);
       await cargarDatos();
-      Alert.alert("¡Éxito!", "Perfil actualizado.");
+      dispararAlerta("¡Éxito!", "Perfil actualizado con éxito.", "exito");
     } catch (err: any) {
-      Alert.alert("Error", err.message || "No se pudieron guardar los cambios.");
+      dispararAlerta("Error", err.message || "No se pudieron guardar los cambios.", "error");
     } finally {
       setGuardandoCambios(false);
     }
@@ -295,7 +455,7 @@ export default function PerfilScreen() {
 
   const handleAbrirWhatsApp = (telefono: string, tituloTarea: string) => {
     if (!telefono) {
-      Alert.alert("Sin teléfono", "Este usuario no tiene teléfono registrado.");
+      dispararAlerta("Sin teléfono", "Este usuario no tiene un número registrado.", "info");
       return;
     }
     const cleanTel = telefono.replace(/[^0-9]/g, "");
@@ -529,9 +689,25 @@ export default function PerfilScreen() {
                         </View>
                       )}
                     </View>
-                    <Text style={styles.taskMonto}>{tarea.monto}</Text>
+
+                    <View style={{ flexDirection: "row", alignItems: "center" }}>
+                      <Text style={styles.taskMonto}>{tarea.monto}</Text>
+                      {tabPublicaciones === "activas" && (
+                        <TouchableOpacity
+                          style={styles.btnOptionsTask}
+                          onPress={(e) => {
+                            e.stopPropagation();
+                            handleAbrirOpcionesTarea(tarea);
+                          }}
+                        >
+                          <Ionicons name="ellipsis-vertical" size={18} color={colors.textSecondary} />
+                        </TouchableOpacity>
+                      )}
+                    </View>
                   </View>
+
                   <Text style={styles.taskTitle}>{tarea.titulo}</Text>
+
                   <View style={styles.taskFooter}>
                     <Text style={styles.taskDate}>{tarea.fecha}</Text>
                     {tarea.estado === "completado" ? (
@@ -560,6 +736,101 @@ export default function PerfilScreen() {
         </Pressable>
       </Modal>
 
+      {/* MENÚ DE OPCIONES 3 PUNTOS: EDITAR / ELIMINAR */}
+      <Modal animationType="fade" transparent={true} visible={tareaOpciones !== null} onRequestClose={() => setTareaOpciones(null)}>
+        <Pressable style={styles.subModalOverlay} onPress={() => setTareaOpciones(null)}>
+          <Pressable style={styles.optionsModalBox} onPress={(e) => e.stopPropagation()}>
+            <Text style={styles.optionsModalTitle} numberOfLines={1}>
+              {tareaOpciones?.titulo}
+            </Text>
+
+            <TouchableOpacity style={styles.optionRowItem} activeOpacity={0.7} onPress={handleIniciarEdicionTarea}>
+              <Ionicons name="pencil" size={18} color={colors.accentBlue} />
+              <Text style={styles.optionRowItemText}>Editar publicación</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.optionRowItem} activeOpacity={0.7} onPress={handleEliminarTareaOpciones}>
+              <Ionicons name="trash-outline" size={18} color="#ef4444" />
+              <Text style={[styles.optionRowItemText, { color: "#ef4444" }]}>Eliminar publicación</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.cancelBtn, { marginTop: 14 }]}
+              onPress={() => setTareaOpciones(null)}
+            >
+              <Text style={styles.cancelBtnText}>Cerrar</Text>
+            </TouchableOpacity>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* MODAL DE EDICIÓN DE PUBLICACIÓN */}
+      <Modal animationType="fade" transparent={true} visible={modalEditarTareaVisible} onRequestClose={() => setModalEditarTareaVisible(false)}>
+        <Pressable style={styles.subModalOverlay} onPress={() => setModalEditarTareaVisible(false)}>
+          <Pressable style={styles.subModalBox} onPress={(e) => e.stopPropagation()}>
+            <View style={styles.sheetHeader}>
+              <Text style={styles.sheetTitle}>Editar Publicación</Text>
+              <TouchableOpacity onPress={() => setModalEditarTareaVisible(false)}>
+                <Ionicons name="close-circle" size={22} color={colors.textMuted} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <Text style={styles.editTaskLabel}>Título del trabajo</Text>
+              <View style={styles.editTaskInputWrap}>
+                <TextInput
+                  style={styles.editTaskInputField}
+                  value={editTituloTarea}
+                  onChangeText={setEditTituloTarea}
+                  maxLength={80}
+                  placeholder="Título..."
+                  placeholderTextColor={colors.textMuted}
+                />
+              </View>
+
+              <Text style={styles.editTaskLabel}>Pago ofrecido (CLP)</Text>
+              <View style={styles.editTaskInputWrap}>
+                <TextInput
+                  style={styles.editTaskInputField}
+                  value={editMontoTarea}
+                  onChangeText={setEditMontoTarea}
+                  keyboardType="numeric"
+                  placeholder="Ej: 15000"
+                  placeholderTextColor={colors.textMuted}
+                />
+              </View>
+
+              <Text style={styles.editTaskLabel}>Descripción y requerimientos</Text>
+              <View style={[styles.editTaskInputWrap, styles.editTaskTextAreaWrap]}>
+                <TextInput
+                  style={[styles.editTaskInputField, { height: '100%' }]}
+                  value={editDescripcionTarea}
+                  onChangeText={setEditDescripcionTarea}
+                  multiline
+                  numberOfLines={4}
+                  placeholder="Descripción detallada..."
+                  placeholderTextColor={colors.textMuted}
+                  textAlignVertical="top"
+                />
+              </View>
+
+              <TouchableOpacity
+                style={[styles.saveBtn, { height: 44, marginTop: 10 }]}
+                activeOpacity={0.85}
+                onPress={handleGuardarEdicionTarea}
+                disabled={guardandoEdicionTarea}
+              >
+                {guardandoEdicionTarea ? (
+                  <ActivityIndicator size="small" color="#ffffff" />
+                ) : (
+                  <Text style={styles.saveBtnText}>Guardar Cambios</Text>
+                )}
+              </TouchableOpacity>
+            </ScrollView>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
       {/* SUB-MODAL: GESTIÓN DE POSTULANTES DE LA TAREA */}
       <Modal animationType="fade" transparent={true} visible={tareaSeleccionada !== null} onRequestClose={() => setTareaSeleccionada(null)}>
         <Pressable style={styles.subModalOverlay} onPress={() => setTareaSeleccionada(null)}>
@@ -582,11 +853,17 @@ export default function PerfilScreen() {
                   </TouchableOpacity>
                 </View>
 
+                {/* ACCIONES DEL CONTRATADOR CUANDO LA TAREA ESTÁ EN PROGRESO */}
                 {tareaSeleccionada.estado === "aceptado" && (
                   <View style={styles.managementActionsRow}>
                     <TouchableOpacity style={styles.btnFinalizarTarea} activeOpacity={0.85} onPress={() => setTareaAFinalizar(tareaSeleccionada)}>
                       <Ionicons name="checkmark-circle" size={17} color="#ffffff" />
                       <Text style={styles.btnFinalizarTareaText}>Finalizar y Calificar</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity style={styles.btnCancelarAcuerdo} activeOpacity={0.85} onPress={handleCancelarAcuerdo}>
+                      <Ionicons name="person-remove-outline" size={16} color="#ef4444" />
+                      <Text style={styles.btnCancelarAcuerdoText}>Cancelar acuerdo con trabajador</Text>
                     </TouchableOpacity>
                   </View>
                 )}
@@ -600,58 +877,64 @@ export default function PerfilScreen() {
                       <Text style={styles.emptyApplicantsTitle}>Aún no hay postulaciones</Text>
                     </View>
                   ) : (
-                    postulantesDeTarea.map((post) => (
-                      <View key={post.id} style={styles.applicantCard}>
-                        <TouchableOpacity activeOpacity={0.7} style={styles.applicantHeaderTouchable} onPress={() => handleVerPerfilPostulante(post)}>
-                          <View style={styles.applicantUserRow}>
-                            <View style={styles.applicantAvatar}>
-                              {post.avatar_url ? (
-                                <Image source={{ uri: post.avatar_url }} style={{ width: "100%", height: "100%" }} />
-                              ) : (
-                                <Ionicons name="person" size={14} color={colors.textPrimary} />
-                              )}
-                            </View>
-                            <View>
-                              <View style={styles.applicantNameRow}>
-                                <Text style={styles.applicantName}>{post.nombre}</Text>
-                                <Ionicons name="chevron-forward-circle-outline" size={14} color={colors.accentBlue} />
+                    postulantesDeTarea.map((post) => {
+                      const esAceptado = post.estado === "aceptado" || post.postulante_id === tareaSeleccionada.trabajador_id;
+
+                      return (
+                        <View key={post.id} style={styles.applicantCard}>
+                          <TouchableOpacity activeOpacity={0.7} style={styles.applicantHeaderTouchable} onPress={() => handleVerPerfilPostulante(post)}>
+                            <View style={styles.applicantUserRow}>
+                              <View style={styles.applicantAvatar}>
+                                {post.avatar_url ? (
+                                  <Image source={{ uri: post.avatar_url }} style={{ width: "100%", height: "100%" }} />
+                                ) : (
+                                  <Ionicons name="person" size={14} color={colors.textPrimary} />
+                                )}
                               </View>
-                              <View style={styles.applicantRatingRow}>
-                                <Ionicons name="star" size={11} color="#eab308" />
-                                <Text style={styles.applicantRatingText}>{post.calificacion}</Text>
-                                <Text style={styles.applicantJobsText}>• {post.trabajos_realizados} tareas</Text>
+                              <View>
+                                <View style={styles.applicantNameRow}>
+                                  <Text style={styles.applicantName}>{post.nombre}</Text>
+                                  <Ionicons name="chevron-forward-circle-outline" size={14} color={colors.accentBlue} />
+                                </View>
+                                <View style={styles.applicantRatingRow}>
+                                  <Ionicons name="star" size={11} color="#eab308" />
+                                  <Text style={styles.applicantRatingText}>{post.calificacion}</Text>
+                                  <Text style={styles.applicantJobsText}>• {post.trabajos_realizados} tareas</Text>
+                                </View>
                               </View>
                             </View>
+                            {esAceptado && (
+                              <View style={styles.badgeAcceptedSmall}><Text style={styles.badgeAcceptedSmallText}>Asignado</Text></View>
+                            )}
+                          </TouchableOpacity>
+
+                          <Text style={styles.applicantMsg}>{post.mensaje}</Text>
+
+                          <View style={styles.applicantActionsRow}>
+                            {post.estado === "pendiente" && tareaSeleccionada.estado === "disponible" && (
+                              <>
+                                <TouchableOpacity style={styles.btnReject} activeOpacity={0.8} onPress={() => handleRechazar(post.id)}>
+                                  <Ionicons name="close" size={15} color="#ef4444" />
+                                  <Text style={styles.btnRejectText}>Rechazar</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity style={styles.btnAccept} activeOpacity={0.85} onPress={() => handleAceptar(post)}>
+                                  <Ionicons name="checkmark" size={15} color="#ffffff" />
+                                  <Text style={styles.btnAcceptText}>Aceptar</Text>
+                                </TouchableOpacity>
+                              </>
+                            )}
+
+                            {/* BOTÓN WHATSAPP PARA EL TRABAJADOR ASIGNADO */}
+                            {esAceptado && (
+                              <TouchableOpacity style={styles.btnWhatsAppApplicant} activeOpacity={0.85} onPress={() => handleAbrirWhatsApp(post.telefono, tareaSeleccionada.titulo)}>
+                                <Ionicons name="logo-whatsapp" size={16} color="#ffffff" />
+                                <Text style={styles.btnWhatsAppApplicantText}>Coordinar por WhatsApp</Text>
+                              </TouchableOpacity>
+                            )}
                           </View>
-                          {post.estado === "aceptado" && (
-                            <View style={styles.badgeAcceptedSmall}><Text style={styles.badgeAcceptedSmallText}>Asignado</Text></View>
-                          )}
-                        </TouchableOpacity>
-
-                        <Text style={styles.applicantMsg}>{post.mensaje}</Text>
-
-                        <View style={styles.applicantActionsRow}>
-                          {post.estado === "pendiente" && tareaSeleccionada.estado === "disponible" && (
-                            <>
-                              <TouchableOpacity style={styles.btnReject} activeOpacity={0.8} onPress={() => handleRechazar(post.id)}>
-                                <Ionicons name="close" size={15} color="#ef4444" />
-                                <Text style={styles.btnRejectText}>Rechazar</Text>
-                              </TouchableOpacity>
-                              <TouchableOpacity style={styles.btnAccept} activeOpacity={0.85} onPress={() => handleAceptar(post)}>
-                                <Ionicons name="checkmark" size={15} color="#ffffff" />
-                                <Text style={styles.btnAcceptText}>Aceptar</Text>
-                              </TouchableOpacity>
-                            </>
-                          )}
-                          {post.estado === "aceptado" && (
-                            <TouchableOpacity style={styles.btnWhatsAppApplicant} activeOpacity={0.85} onPress={() => handleAbrirWhatsApp(post.telefono, tareaSeleccionada.titulo)}>
-                              <Ionicons name="logo-whatsapp" size={16} color="#ffffff" />
-                              <Text style={styles.btnWhatsAppApplicantText}>Coordinar por WhatsApp</Text>
-                            </TouchableOpacity>
-                          )}
                         </View>
-                      </View>
-                    ))
+                      );
+                    })
                   )}
                 </ScrollView>
               </>
@@ -911,7 +1194,7 @@ export default function PerfilScreen() {
                 onPress={() => {
                   setPerfil((prev) => ({ ...prev, creditos: prev.creditos + pack.creditos }));
                   setModalVisible("ninguno");
-                  Alert.alert("¡Compra simulada!", `Añadiste ${pack.creditos} créditos.`);
+                  dispararAlerta("¡Compra simulada!", `Añadiste ${pack.creditos} créditos a tu saldo.`, "exito");
                 }}
               >
                 <View style={styles.packageInfo}>
@@ -924,6 +1207,90 @@ export default function PerfilScreen() {
                 <View style={styles.buyButtonWrap}><Text style={styles.packagePrice}>{pack.precio}</Text></View>
               </TouchableOpacity>
             ))}
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* MODAL DE ALERTA PERSONALIZADO (DARK THEME) */}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={alerta.visible}
+        onRequestClose={cerrarAlerta}
+      >
+        <Pressable style={styles.subModalOverlay} onPress={cerrarAlerta}>
+          <Pressable style={styles.customAlertBox} onPress={(e) => e.stopPropagation()}>
+            <View
+              style={[
+                styles.customAlertIconWrap,
+                {
+                  backgroundColor:
+                    alerta.tipo === 'exito'
+                      ? 'rgba(34, 197, 94, 0.15)'
+                      : alerta.tipo === 'error'
+                      ? 'rgba(239, 68, 68, 0.15)'
+                      : alerta.tipo === 'confirmar'
+                      ? 'rgba(234, 179, 8, 0.15)'
+                      : 'rgba(59, 130, 246, 0.15)',
+                },
+              ]}
+            >
+              <Ionicons
+                name={
+                  alerta.tipo === 'exito'
+                    ? 'checkmark-circle'
+                    : alerta.tipo === 'error'
+                    ? 'alert-circle'
+                    : alerta.tipo === 'confirmar'
+                    ? 'help-circle'
+                    : 'information-circle'
+                }
+                size={32}
+                color={
+                  alerta.tipo === 'exito'
+                    ? colors.accentGreen
+                    : alerta.tipo === 'error'
+                    ? '#ef4444'
+                    : alerta.tipo === 'confirmar'
+                    ? '#eab308'
+                    : colors.accentBlue
+                }
+              />
+            </View>
+
+            <Text style={styles.customAlertTitle}>{alerta.titulo}</Text>
+            <Text style={styles.customAlertMessage}>{alerta.mensaje}</Text>
+
+            <View style={styles.customAlertButtonsRow}>
+              {alerta.tipo === 'confirmar' && (
+                <TouchableOpacity
+                  style={styles.btnCustomAlertCancel}
+                  onPress={() => {
+                    cerrarAlerta();
+                    if (alerta.onCancelar) alerta.onCancelar();
+                  }}
+                >
+                  <Text style={styles.btnCustomAlertCancelText}>
+                    {alerta.textoCancelar || 'Cancelar'}
+                  </Text>
+                </TouchableOpacity>
+              )}
+
+              <TouchableOpacity
+                style={[
+                  styles.btnCustomAlertConfirm,
+                  alerta.tipo === 'error' && { backgroundColor: '#ef4444' },
+                ]}
+                onPress={() => {
+                  cerrarAlerta();
+                  if (alerta.onConfirmar) alerta.onConfirmar();
+                }}
+              >
+                <Text style={styles.btnCustomAlertConfirmText}>
+                  {alerta.textoConfirmar || 'Entendido'}
+                </Text>
+              </TouchableOpacity>
+            </View>
           </Pressable>
         </Pressable>
       </Modal>

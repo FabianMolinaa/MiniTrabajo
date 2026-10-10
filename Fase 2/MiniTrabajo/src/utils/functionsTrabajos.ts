@@ -1,50 +1,38 @@
 import { supabase } from '../services/supabase';
 
-export type EstadoTrabajo = 'disponible' | 'postulado' | 'aceptado' | 'completado';
+export type EstadoTrabajo = 'disponible' | 'postulado' | 'aceptado' | 'completado' | 'rechazado';
 
 export interface TrabajoUI {
   id: string;
   titulo: string;
-  categoria: string;
-  categoriaId: number;
+  descripcion: string;
   monto: string;
   montoRaw: number;
-  solicitante: string;
-  solicitanteId: string;
-  avatarUrl: string | null;
+  categoria: string;
+  categoriaId: number;
   comuna: string;
   comunaId: number;
-  telefono: string;
-  descripcion: string;
+  solicitante: string;
+  solicitanteId: string;
+  avatarUrl?: string;
+  telefono?: string;
   destacado: boolean;
   estado: EstadoTrabajo;
+  estadoPublicacionOriginal?: string;
+  tieneAceptado?: boolean;
+  miPostulacionId?: string;
   imagenes: string[];
   fechaPublicacion: string;
-  urgencia?: string;
-  miPostulacionId?: string;
   totalPostulantes: number;
-}
-
-export interface SolicitanteDetalle {
-  id: string;
-  nombre: string;
-  avatarUrl: string | null;
-  comuna: string;
-  sobreMi: string;
-  calificacion: string;
-  totalResenas: number;
-  resenas: {
-    id: string;
-    autor: string;
-    calificacion: number;
-    comentario: string;
-    fecha: string;
-  }[];
+  latitud?: number | null;
+  longitud?: number | null;
+  distanciaKm?: number | null;
 }
 
 export interface CategoriaFiltro {
   id: number;
   nombre: string;
+  icono?: string;
 }
 
 export interface ComunaFiltro {
@@ -52,162 +40,364 @@ export interface ComunaFiltro {
   nombre: string;
 }
 
-// 1. Obtener listado de categorías para filtros
-export async function fetchCategoriasFiltro(): Promise<CategoriaFiltro[]> {
-  const { data, error } = await supabase
-    .from('categorias')
-    .select('id, nombre')
-    .order('id', { ascending: true });
-
-  if (error || !data) return [];
-  return data;
+export interface SolicitanteDetalle {
+  id: string;
+  nombre: string;
+  avatarUrl?: string;
+  comuna: string;
+  sobreMi: string;
+  calificacion: number;
+  totalResenas: number;
+  resenas: Array<{
+    id: string;
+    autor: string;
+    calificacion: number;
+    comentario: string;
+  }>;
 }
 
-// 2. Obtener listado de comunas para filtros
-export async function fetchComunasFiltro(): Promise<ComunaFiltro[]> {
-  const { data, error } = await supabase
-    .from('comunas')
-    .select('id, nombre')
-    .order('nombre', { ascending: true });
+export const calcularDistanciaKm = (
+  lat1: number,
+  lon1: number,
+  lat2: number,
+  lon2: number
+): number => {
+  const R = 6371;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+};
 
-  if (error || !data) return [];
-  return data;
-}
+export const formatearDistancia = (km: number | null | undefined): string => {
+  if (km === null || km === undefined) return 'Ubicación comunal';
+  if (km < 1) return `A ${Math.round(km * 1000)} m`;
+  return `A ${km.toFixed(1)} km`;
+};
 
-// 3. Obtener muro de publicaciones con relaciones completas
-export async function fetchTrabajosMuro(userId?: string | null): Promise<TrabajoUI[]> {
-  const { data, error } = await supabase
+export const formatearMonedaCLP = (monto: number): string => {
+  return `$${monto.toLocaleString('es-CL')}`;
+};
+
+export const fetchCategoriasFiltro = async (): Promise<CategoriaFiltro[]> => {
+  const { data } = await supabase.from('categorias').select('id, nombre, icono').order('id');
+  return data || [];
+};
+
+export const fetchComunasFiltro = async (): Promise<ComunaFiltro[]> => {
+  const { data } = await supabase.from('comunas').select('id, nombre').order('nombre');
+  return data || [];
+};
+
+export const fetchTrabajosMuro = async (
+  usuarioId: string | null,
+  coordsUsuario?: { latitude: number; longitude: number } | null
+): Promise<TrabajoUI[]> => {
+  let trabajosData: any[] = [];
+
+  const { data: dataJoin, error: errorJoin } = await supabase
     .from('trabajos')
     .select(`
       id,
+      user_id,
       titulo,
-      monto,
       descripcion,
+      monto,
       destacado,
       estado,
       imagenes,
       created_at,
+      latitud,
+      longitud,
       categoria_id,
       comuna_id,
-      user_id,
       categorias ( id, nombre ),
-      comunas ( id, nombre ),
-      perfiles:user_id ( id, nombre, telefono, avatar_url ),
-      postulaciones ( id, postulante_id, estado )
+      comunas ( id, nombre )
     `)
+    .neq('estado', 'completado')
     .order('destacado', { ascending: false })
     .order('created_at', { ascending: false });
 
-  if (error || !data) return [];
+  if (errorJoin) {
+    const { data: dataSimple } = await supabase
+      .from('trabajos')
+      .select('*')
+      .neq('estado', 'completado')
+      .order('destacado', { ascending: false })
+      .order('created_at', { ascending: false });
+    trabajosData = dataSimple || [];
+  } else {
+    trabajosData = dataJoin || [];
+  }
 
-  return data.map((t: any) => {
-    const postulaciones = t.postulaciones || [];
-    const miPostulacion = userId
-      ? postulaciones.find((p: any) => p.postulante_id === userId)
-      : null;
+  trabajosData = trabajosData.filter(
+    (t) => String(t.estado || '').toLowerCase() !== 'completado'
+  );
 
-    let estadoFinal: EstadoTrabajo = t.estado;
-    if (miPostulacion) {
-      estadoFinal = miPostulacion.estado === 'aceptado' ? 'aceptado' : 'postulado';
+  const trabajoIds = trabajosData.map((t) => t.id);
+  let trabajosConAceptado = new Set<string>();
+
+  if (trabajoIds.length > 0) {
+    const { data: postulacionesData } = await supabase
+      .from('postulaciones')
+      .select('trabajo_id, estado')
+      .in('trabajo_id', trabajoIds)
+      .eq('estado', 'aceptado');
+
+    if (postulacionesData) {
+      postulacionesData.forEach((p) => trabajosConAceptado.add(p.trabajo_id));
+    }
+  }
+
+  const userIds = Array.from(new Set(trabajosData.map((t) => t.user_id).filter(Boolean)));
+  const perfilesMap: Record<string, any> = {};
+
+  if (userIds.length > 0) {
+    const { data: perfilesData } = await supabase
+      .from('perfiles')
+      .select('id, nombre_completo, avatar_url, telefono')
+      .in('id', userIds);
+
+    if (perfilesData) {
+      perfilesData.forEach((p) => {
+        perfilesMap[p.id] = p;
+      });
+    }
+  }
+
+  let misPostulaciones: Record<string, { id: string; estado: string }> = {};
+  if (usuarioId) {
+    const { data: postData } = await supabase
+      .from('postulaciones')
+      .select('id, trabajo_id, estado')
+      .eq('postulante_id', usuarioId);
+
+    if (postData) {
+      postData.forEach((p: any) => {
+        misPostulaciones[p.trabajo_id] = { id: p.id, estado: p.estado };
+      });
+    }
+  }
+
+  return trabajosData.map((t: any) => {
+    const perfil = perfilesMap[t.user_id] || {};
+    const tieneCoords = t.latitud != null && t.longitud != null;
+    let distKm: number | null = null;
+
+    if (coordsUsuario && tieneCoords) {
+      distKm = calcularDistanciaKm(
+        coordsUsuario.latitude,
+        coordsUsuario.longitude,
+        Number(t.latitud),
+        Number(t.longitud)
+      );
     }
 
-    const fechaFormateada = new Date(t.created_at).toLocaleDateString('es-CL', {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric',
-    });
+    const postulacion = misPostulaciones[t.id];
+    let estadoFinal: EstadoTrabajo = 'disponible';
+    if (postulacion) {
+      if (postulacion.estado === 'aceptado') {
+        estadoFinal = 'aceptado';
+      } else if (postulacion.estado === 'rechazado') {
+        estadoFinal = 'rechazado';
+      } else {
+        estadoFinal = 'postulado';
+      }
+    }
+
+    const estaAceptado =
+      trabajosConAceptado.has(t.id) ||
+      String(t.estado || '').toLowerCase() === 'en_progreso';
 
     return {
-      id: t.id,
-      titulo: t.titulo,
+      id: String(t.id),
+      titulo: t.titulo || 'Sin título',
+      descripcion: t.descripcion || '',
+      monto: formatearMonedaCLP(Number(t.monto) || 0),
+      montoRaw: Number(t.monto) || 0,
       categoria: t.categorias?.nombre || 'General',
-      categoriaId: t.categoria_id,
-      monto: `$${Number(t.monto).toLocaleString('es-CL')}`,
-      montoRaw: t.monto,
-      solicitante: t.perfiles?.nombre || 'Usuario',
-      solicitanteId: t.user_id,
-      avatarUrl: t.perfiles?.avatar_url || null,
-      comuna: t.comunas?.nombre || 'Santiago Centro',
-      comunaId: t.comuna_id,
-      telefono: t.perfiles?.telefono || '',
-      descripcion: t.descripcion,
+      categoriaId: t.categoria_id || t.categorias?.id || 0,
+      comuna: t.comunas?.nombre || 'Santiago',
+      comunaId: t.comuna_id || t.comunas?.id || 0,
+      solicitante: perfil.nombre_completo || 'Usuario',
+      solicitanteId: t.user_id || '',
+      avatarUrl: perfil.avatar_url,
+      telefono: perfil.telefono,
       destacado: Boolean(t.destacado),
       estado: estadoFinal,
-      imagenes: t.imagenes || [],
-      fechaPublicacion: fechaFormateada,
-      miPostulacionId: miPostulacion?.id,
-      totalPostulantes: postulaciones.length,
+      estadoPublicacionOriginal: t.estado || 'disponible',
+      tieneAceptado: estaAceptado,
+      miPostulacionId: postulacion?.id,
+      imagenes: Array.isArray(t.imagenes) ? t.imagenes : [],
+      fechaPublicacion: t.created_at ? new Date(t.created_at).toLocaleDateString('es-CL') : 'Hoy',
+      totalPostulantes: 0,
+      latitud: t.latitud,
+      longitud: t.longitud,
+      distanciaKm: distKm,
     };
   });
-}
+};
 
-// 4. Obtener información y reseñas del solicitante
-export async function fetchDetalleSolicitante(solicitanteId: string): Promise<SolicitanteDetalle | null> {
-  const { data: perfilData, error: perfilErr } = await supabase
-    .from('perfiles')
-    .select(`
-      id,
-      nombre,
-      avatar_url,
-      sobre_mi,
-      calificacion,
-      total_resenas,
-      comunas ( nombre )
-    `)
-    .eq('id', solicitanteId)
+export const fetchDetalleSolicitante = async (solicitanteId: string): Promise<SolicitanteDetalle | null> => {
+  try {
+    const { data: perfil, error } = await supabase
+      .from('perfiles')
+      .select('id, nombre_completo, avatar_url, comuna, sobre_mi, calificacion, total_resenas')
+      .eq('id', solicitanteId)
+      .single();
+
+    if (error || !perfil) {
+      const { data: perfilFallback } = await supabase
+        .from('perfiles')
+        .select('*')
+        .eq('id', solicitanteId)
+        .single();
+
+      if (!perfilFallback) return null;
+
+      return {
+        id: perfilFallback.id,
+        nombre: perfilFallback.nombre_completo || perfilFallback.nombre || 'Usuario',
+        avatarUrl: perfilFallback.avatar_url,
+        comuna: perfilFallback.comuna || 'Santiago',
+        sobreMi: perfilFallback.sobre_mi || 'Sin descripción disponible.',
+        calificacion: Number(perfilFallback.calificacion) || 5,
+        totalResenas: Number(perfilFallback.total_resenas) || 0,
+        resenas: [],
+      };
+    }
+
+    const { data: resenasData } = await supabase
+      .from('resenas')
+      .select(`
+        id,
+        calificacion,
+        comentario,
+        created_at,
+        perfiles:autor_id ( nombre_completo )
+      `)
+      .eq('usuario_evaluado_id', solicitanteId)
+      .order('created_at', { ascending: false })
+      .limit(6);
+
+    const resenasMapeadas = (resenasData || []).map((r: any) => ({
+      id: String(r.id),
+      autor: r.perfiles?.nombre_completo || 'Usuario',
+      calificacion: Number(r.calificacion) || 5,
+      comentario: r.comentario || '',
+    }));
+
+    return {
+      id: perfil.id,
+      nombre: perfil.nombre_completo || 'Usuario',
+      avatarUrl: perfil.avatar_url,
+      comuna: perfil.comuna || 'Santiago',
+      sobreMi: perfil.sobre_mi || 'Sin descripción disponible.',
+      calificacion: Number(perfil.calificacion) || 5,
+      totalResenas: Number(perfil.total_resenas) || resenasMapeadas.length,
+      resenas: resenasMapeadas,
+    };
+  } catch {
+    return null;
+  }
+};
+
+export const postularATrabajo = async (trabajoId: string, postulanteId: string) => {
+  // Comprobación de integridad: verificar si el trabajo ya fue tomado o cerrado
+  const { data: trabajo } = await supabase
+    .from('trabajos')
+    .select('estado')
+    .eq('id', trabajoId)
     .single();
 
-  if (perfilErr || !perfilData) return null;
+  if (
+    trabajo &&
+    (trabajo.estado === 'en_progreso' || trabajo.estado === 'completado')
+  ) {
+    throw new Error('Esta tarea ya fue asignada y no acepta nuevas postulaciones.');
+  }
 
-  const { data: resenasData } = await supabase
-    .from('resenas')
-    .select(`
-      id,
-      calificacion,
-      comentario,
-      created_at,
-      perfiles!resenas_autor_id_fkey ( nombre )
-    `)
-    .eq('evaluado_id', solicitanteId)
-    .order('created_at', { ascending: false })
-    .limit(5);
+  const { data: postulacionAceptada } = await supabase
+    .from('postulaciones')
+    .select('id')
+    .eq('trabajo_id', trabajoId)
+    .eq('estado', 'aceptado');
 
-  const resenasMapeadas = (resenasData || []).map((r: any) => ({
-    id: r.id,
-    autor: r.perfiles?.nombre || 'Usuario',
-    calificacion: r.calificacion,
-    comentario: r.comentario,
-    fecha: new Date(r.created_at).toLocaleDateString('es-CL'),
-  }));
+  if (postulacionAceptada && postulacionAceptada.length > 0) {
+    throw new Error('Esta tarea ya cuenta con un trabajador seleccionado.');
+  }
 
-  return {
-    id: perfilData.id,
-    nombre: perfilData.nombre || 'Usuario',
-    avatarUrl: perfilData.avatar_url || null,
-    comuna: (perfilData.comunas as any)?.nombre || 'Santiago',
-    sobreMi: perfilData.sobre_mi || 'Sin descripción disponible.',
-    calificacion: perfilData.calificacion ? Number(perfilData.calificacion).toFixed(1) : '0.0',
-    totalResenas: perfilData.total_resenas || 0,
-    resenas: resenasMapeadas,
-  };
-}
+  return await supabase
+    .from('postulaciones')
+    .insert({
+      trabajo_id: trabajoId,
+      postulante_id: postulanteId,
+      mensaje: 'Me postulo para realizar este trabajo.',
+      estado: 'pendiente',
+    })
+    .select('id')
+    .single();
+};
 
-// 5. Postular a un trabajo
-export async function postularATrabajo(trabajoId: string, userId: string, mensaje: string = 'Interesado en realizar esta tarea.') {
-  return supabase.from('postulaciones').insert({
-    trabajo_id: trabajoId,
-    postulante_id: userId,
-    mensaje,
-    estado: 'pendiente',
-  });
-}
+export const retirarPostulacion = async (trabajoId: string, postulanteId: string) => {
+  return await supabase
+    .from('postulaciones')
+    .delete()
+    .eq('trabajo_id', trabajoId)
+    .eq('postulante_id', postulanteId);
+};
 
-// 6. Retirar postulación
-export async function retirarPostulacion(postulacionId: string) {
-  return supabase.from('postulaciones').delete().eq('id', postulacionId);
-}
+export const eliminarTrabajoPropio = async (trabajoId: string) => {
+  const { data: aceptadas } = await supabase
+    .from('postulaciones')
+    .select('id')
+    .eq('trabajo_id', trabajoId)
+    .eq('estado', 'aceptado');
 
-// 7. Eliminar publicación propia (si aún no tiene trabajador asignado)
-export async function eliminarTrabajoPropio(trabajoId: string) {
-  return supabase.from('trabajos').delete().eq('id', trabajoId);
-}
+  if (aceptadas && aceptadas.length > 0) {
+    throw new Error('No puedes eliminar una tarea que ya cuenta con un trabajador aceptado.');
+  }
+
+  await supabase.from('postulaciones').delete().eq('trabajo_id', trabajoId);
+  const { error } = await supabase.from('trabajos').delete().eq('id', trabajoId);
+  if (error) throw error;
+  return { error: null };
+};
+
+export const editarTrabajoPropio = async (
+  trabajoId: string,
+  datos: { titulo: string; descripcion: string; monto: number }
+) => {
+  const { data: aceptadas } = await supabase
+    .from('postulaciones')
+    .select('id')
+    .eq('trabajo_id', trabajoId)
+    .eq('estado', 'aceptado');
+
+  if (aceptadas && aceptadas.length > 0) {
+    throw new Error('La tarea ya fue asignada a un trabajador y no puede ser modificada.');
+  }
+
+  const { data, error } = await supabase
+    .from('trabajos')
+    .update({
+      titulo: datos.titulo.trim(),
+      descripcion: datos.descripcion.trim(),
+      monto: datos.monto,
+    })
+    .eq('id', trabajoId)
+    .select();
+
+  if (error) throw error;
+  if (!data || data.length === 0) {
+    throw new Error('No se pudo guardar la edición.');
+  }
+
+  return { data, error: null };
+};

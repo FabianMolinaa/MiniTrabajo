@@ -40,28 +40,24 @@ export const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
   },
-
-  // Banner de alerta de error inline
   errorBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 8,
     backgroundColor: 'rgba(239, 68, 68, 0.12)',
-    borderWidth: 1,
-    borderColor: 'rgba(239, 68, 68, 0.4)',
-    borderRadius: 12,
     paddingHorizontal: 14,
-    paddingVertical: 12,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.3)',
     marginBottom: 14,
   },
   errorBannerText: {
     flex: 1,
     color: '#ef4444',
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '600',
-    lineHeight: 17,
   },
-
   label: {
     fontSize: 13,
     fontWeight: '600',
@@ -71,7 +67,6 @@ export const styles = StyleSheet.create({
   },
   requiredAsterisk: {
     color: '#ef4444',
-    fontWeight: '700',
   },
   inputWrap: {
     flexDirection: 'row',
@@ -82,9 +77,6 @@ export const styles = StyleSheet.create({
     borderColor: colors.border,
     paddingHorizontal: 14,
     height: 48,
-  },
-  inputWrapError: {
-    borderColor: '#ef4444',
   },
   currencyPrefix: {
     color: colors.accentGreen,
@@ -181,6 +173,55 @@ export const styles = StyleSheet.create({
     color: colors.textPrimary,
     fontSize: 14,
   },
+
+  // Fila de selector de comuna con botón GPS integrado
+  locationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 4,
+  },
+  dropdownButtonFlex: {
+    flex: 1,
+    marginBottom: 0,
+  },
+  gpsButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 14,
+    backgroundColor: colors.surfaceLight,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  gpsButtonActive: {
+    backgroundColor: colors.accentBlueBg,
+    borderColor: colors.accentBlue,
+  },
+  gpsBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: colors.accentBlueBg,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    marginTop: 6,
+    marginBottom: 8,
+  },
+  gpsBadgeContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flex: 1,
+  },
+  gpsBadgeText: {
+    fontSize: 12,
+    color: colors.accentBlue,
+    fontWeight: '600',
+  },
+
   chipsRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -285,8 +326,6 @@ export const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
   },
-
-  // Modal para Dropdowns
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.75)',
@@ -338,51 +377,47 @@ export const styles = StyleSheet.create({
     color: colors.accentBlue,
     fontWeight: '700',
   },
-
-  // Modal de Confirmación de Éxito
   successModalBox: {
     width: '100%',
+    maxWidth: 340,
     backgroundColor: colors.surface,
-    borderRadius: 24,
+    borderRadius: 22,
     padding: 22,
     alignItems: 'center',
     borderWidth: 1,
     borderColor: colors.border,
   },
   successIconWrap: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: 'rgba(34, 197, 94, 0.15)',
-    borderWidth: 1,
-    borderColor: 'rgba(34, 197, 94, 0.35)',
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: 'rgba(34, 197, 94, 0.12)',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 14,
+    marginBottom: 12,
   },
   successTitle: {
     fontSize: 18,
     fontWeight: '800',
     color: colors.textPrimary,
-    marginBottom: 6,
-    textAlign: 'center',
+    marginBottom: 4,
   },
   successSubtitle: {
-    fontSize: 13,
+    fontSize: 12,
     color: colors.textSecondary,
     textAlign: 'center',
-    lineHeight: 18,
-    marginBottom: 16,
+    lineHeight: 17,
+    marginBottom: 14,
   },
   successSummaryCard: {
     width: '100%',
     backgroundColor: colors.surfaceLight,
     borderRadius: 14,
-    padding: 14,
-    marginBottom: 20,
+    padding: 12,
     borderWidth: 1,
     borderColor: colors.border,
-    gap: 8,
+    gap: 6,
+    marginBottom: 16,
   },
   summaryRow: {
     flexDirection: 'row',
@@ -394,21 +429,22 @@ export const styles = StyleSheet.create({
     color: colors.textMuted,
   },
   summaryVal: {
-    fontSize: 13,
-    fontWeight: '700',
+    fontSize: 12,
     color: colors.textPrimary,
+    fontWeight: '600',
+    maxWidth: '65%',
   },
   btnSuccessDone: {
     width: '100%',
-    height: 48,
+    height: 44,
     backgroundColor: colors.accentBlue,
-    borderRadius: 14,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
   },
   btnSuccessDoneText: {
     color: '#ffffff',
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '700',
   },
 });
