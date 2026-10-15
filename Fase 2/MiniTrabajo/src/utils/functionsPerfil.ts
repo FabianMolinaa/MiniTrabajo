@@ -3,6 +3,7 @@ import { supabase } from '../services/supabase';
 export interface ResenaItem {
   id: string;
   autor: string;
+  avatarUrl?: string | null;
   calificacion: number;
   fecha: string;
   comentario: string;
@@ -14,6 +15,14 @@ export interface TrabajoRealizadoItem {
   categoria: string;
   fecha: string;
   monto: string;
+  solicitanteId: string;
+  solicitanteNombre: string;
+  solicitanteAvatar?: string | null;
+  calificadoPorMi: boolean;
+  miCalificacion?: {
+    calificacion: number;
+    comentario: string;
+  } | null;
 }
 
 export interface PostulanteBD {
@@ -40,8 +49,15 @@ export interface MiPublicacion {
   fecha: string;
   estado: string;
   trabajador_id?: string | null;
+  trabajador_nombre?: string | null;
+  trabajador_avatar?: string | null;
   imagenes?: string[];
   total_postulantes?: number;
+  calificadoPorMi?: boolean;
+  miCalificacion?: {
+    calificacion: number;
+    comentario: string;
+  } | null;
 }
 
 export interface PerfilData {
@@ -65,12 +81,30 @@ export const fetchPerfilUsuario = async (userId: string): Promise<PerfilData | n
 
   if (!perfil) return null;
 
+  // Calculamos el promedio y conteo real de reseñas para tener el dato más fresco
+  const { data: resenas } = await supabase
+    .from('resenas')
+    .select('calificacion')
+    .or(`usuario_evaluado_id.eq.${userId},evaluado_id.eq.${userId}`);
+
+  let calificacionCalculada = '0.0';
+  let totalResenas = 0;
+
+  if (resenas && resenas.length > 0) {
+    totalResenas = resenas.length;
+    const suma = resenas.reduce((acc, r) => acc + (Number(r.calificacion) || 5), 0);
+    calificacionCalculada = (suma / totalResenas).toFixed(1);
+  } else if (perfil.calificacion != null && Number(perfil.calificacion) > 0) {
+    calificacionCalculada = Number(perfil.calificacion).toFixed(1);
+    totalResenas = Number(perfil.total_resenas) || 0;
+  }
+
   return {
     nombre: perfil.nombre || perfil.nombre_completo || 'Usuario',
     sobre_mi: perfil.sobre_mi || 'Sin descripción aún.',
     avatar_url: perfil.avatar_url,
-    calificacion: Number(perfil.calificacion || 0).toFixed(1),
-    total_resenas: perfil.total_resenas || 0,
+    calificacion: calificacionCalculada,
+    total_resenas: totalResenas,
     trabajos_realizados: perfil.trabajos_realizados || 0,
     creditos: perfil.creditos ?? 10,
     comuna_id: perfil.comuna_id || 1,
@@ -98,6 +132,50 @@ export const fetchPublicacionesUsuario = async (userId: string): Promise<MiPubli
 
   if (!trabajos) return [];
 
+  // Obtener IDs de trabajadores asignados
+  const trabajadorIds = Array.from(
+    new Set(
+      trabajos
+        .map((t: any) => {
+          const postAceptada = (t.postulaciones || []).find((p: any) => p.estado === 'aceptado');
+          return t.trabajador_id || postAceptada?.postulante_id || null;
+        })
+        .filter(Boolean)
+    )
+  );
+
+  const perfilesTrabajadores: Record<string, any> = {};
+  if (trabajadorIds.length > 0) {
+    const { data: perfilesData } = await supabase
+      .from('perfiles')
+      .select('id, nombre, nombre_completo, avatar_url')
+      .in('id', trabajadorIds);
+
+    if (perfilesData) {
+      perfilesData.forEach((p) => {
+        perfilesTrabajadores[p.id] = p;
+      });
+    }
+  }
+
+  // Obtener reseñas hechas por mí (empleador) para mis publicaciones completadas
+  const trabajoIds = trabajos.map((t: any) => t.id);
+  const { data: misResenas } = await supabase
+    .from('resenas')
+    .select('trabajo_id, calificacion, comentario')
+    .eq('autor_id', userId)
+    .in('trabajo_id', trabajoIds);
+
+  const resenasMap: Record<string, { calificacion: number; comentario: string }> = {};
+  if (misResenas) {
+    misResenas.forEach((r: any) => {
+      resenasMap[r.trabajo_id] = {
+        calificacion: Number(r.calificacion) || 5,
+        comentario: r.comentario || '',
+      };
+    });
+  }
+
   return trabajos.map((t: any) => {
     const postAceptada = (t.postulaciones || []).find((p: any) => p.estado === 'aceptado');
     let estadoCalculado = t.estado;
@@ -106,6 +184,9 @@ export const fetchPublicacionesUsuario = async (userId: string): Promise<MiPubli
     if (t.estado !== 'completado') {
       estadoCalculado = postAceptada || t.estado === 'en_progreso' ? 'aceptado' : 'disponible';
     }
+
+    const perfTrabajador = trabajadorId ? perfilesTrabajadores[trabajadorId] : null;
+    const resena = resenasMap[t.id];
 
     return {
       id: String(t.id),
@@ -117,8 +198,12 @@ export const fetchPublicacionesUsuario = async (userId: string): Promise<MiPubli
       fecha: new Date(t.created_at).toLocaleDateString('es-CL'),
       estado: estadoCalculado,
       trabajador_id: trabajadorId,
+      trabajador_nombre: perfTrabajador ? (perfTrabajador.nombre || perfTrabajador.nombre_completo) : null,
+      trabajador_avatar: perfTrabajador ? perfTrabajador.avatar_url : null,
       imagenes: Array.isArray(t.imagenes) ? t.imagenes : [],
       total_postulantes: (t.postulaciones || []).length,
+      calificadoPorMi: Boolean(resena),
+      miCalificacion: resena || null,
     };
   });
 };
@@ -135,33 +220,31 @@ export const fetchPostulantesDeTarea = async (trabajoId: string): Promise<Postul
 
     const postulantesIds = Array.from(new Set(posts.map((p) => p.postulante_id)));
 
-    // Consulta adaptada a tu esquema exacto (usando 'nombre')
     const { data: perfilesData } = await supabase
       .from('perfiles')
-      .select('id, nombre, nombre_completo, avatar_url, telefono, sobre_mi, calificacion, trabajos_realizados, comunas(nombre)')
+      .select('id, nombre, nombre_completo, avatar_url, comuna, sobre_mi, calificacion, trabajos_realizados, telefono')
       .in('id', postulantesIds);
 
     const perfilesMap: Record<string, any> = {};
     if (perfilesData) {
-      perfilesData.forEach((p: any) => {
+      perfilesData.forEach((p) => {
         perfilesMap[p.id] = p;
       });
     }
 
     return posts.map((p: any) => {
-      const perfil = perfilesMap[p.postulante_id] || {};
-
+      const perf = perfilesMap[p.postulante_id] || {};
       return {
         id: String(p.id),
         postulante_id: p.postulante_id,
-        nombre: perfil.nombre || perfil.nombre_completo || 'Usuario',
-        avatar_url: perfil.avatar_url,
-        comuna: perfil.comunas?.nombre || 'Santiago',
-        sobre_mi: perfil.sobre_mi || 'Sin descripción disponible.',
-        calificacion: Number(perfil.calificacion || 5).toFixed(1),
-        trabajos_realizados: perfil.trabajos_realizados || 0,
-        telefono: perfil.telefono || '',
-        mensaje: p.mensaje || 'Me postulo para realizar este trabajo.',
+        nombre: perf.nombre || perf.nombre_completo || 'Postulante',
+        avatar_url: perf.avatar_url || null,
+        comuna: perf.comuna || 'Santiago',
+        sobre_mi: perf.sobre_mi || 'Sin descripción',
+        calificacion: Number(perf.calificacion || 5).toFixed(1),
+        trabajos_realizados: perf.trabajos_realizados || 0,
+        telefono: perf.telefono || '',
+        mensaje: p.mensaje || 'Hola, me interesa realizar esta tarea.',
         estado: p.estado,
       };
     });
@@ -174,7 +257,7 @@ export const fetchPostulantesDeTarea = async (trabajoId: string): Promise<Postul
 export const fetchResenasUsuario = async (userId: string): Promise<ResenaItem[]> => {
   const { data } = await supabase
     .from('resenas')
-    .select('id, calificacion, comentario, created_at, perfiles:autor_id(nombre, nombre_completo)')
+    .select('id, calificacion, comentario, created_at, perfiles:autor_id(id, nombre, nombre_completo, avatar_url)')
     .or(`usuario_evaluado_id.eq.${userId},evaluado_id.eq.${userId}`)
     .order('created_at', { ascending: false });
 
@@ -183,29 +266,103 @@ export const fetchResenasUsuario = async (userId: string): Promise<ResenaItem[]>
   return data.map((r: any) => ({
     id: String(r.id),
     autor: r.perfiles?.nombre || r.perfiles?.nombre_completo || 'Usuario',
-    calificacion: r.calificacion || 5,
+    avatarUrl: r.perfiles?.avatar_url || null,
+    calificacion: Number(r.calificacion) || 5,
     fecha: new Date(r.created_at).toLocaleDateString('es-CL'),
     comentario: r.comentario || '',
   }));
 };
 
 export const fetchHistorialTrabajosHechos = async (userId: string): Promise<TrabajoRealizadoItem[]> => {
-  const { data } = await supabase
+  // 1. Trabajos completados asignados directamente
+  const { data: trabajosDirectos } = await supabase
     .from('trabajos')
-    .select('id, titulo, monto, created_at, categorias(nombre)')
+    .select('id, titulo, monto, created_at, user_id, categorias(nombre)')
     .eq('trabajador_id', userId)
     .eq('estado', 'completado')
     .order('created_at', { ascending: false });
 
-  if (!data) return [];
+  // 2. Trabajos completados con postulación aceptada
+  const { data: postsAceptadas } = await supabase
+    .from('postulaciones')
+    .select(`
+      trabajo_id,
+      trabajos (
+        id,
+        titulo,
+        monto,
+        created_at,
+        user_id,
+        estado,
+        categorias(nombre)
+      )
+    `)
+    .eq('postulante_id', userId)
+    .eq('estado', 'aceptado');
 
-  return data.map((t: any) => ({
-    id: String(t.id),
-    titulo: t.titulo,
-    categoria: t.categorias?.nombre || 'General',
-    fecha: new Date(t.created_at).toLocaleDateString('es-CL'),
-    monto: `$${Number(t.monto || 0).toLocaleString('es-CL')}`,
-  }));
+  const mapaTrabajos = new Map<string, any>();
+  (trabajosDirectos || []).forEach((t: any) => mapaTrabajos.set(t.id, t));
+  (postsAceptadas || []).forEach((p: any) => {
+    if (p.trabajos && p.trabajos.estado === 'completado') {
+      mapaTrabajos.set(p.trabajos.id, p.trabajos);
+    }
+  });
+
+  const listaTrabajos = Array.from(mapaTrabajos.values());
+  if (listaTrabajos.length === 0) return [];
+
+  // Obtener datos de los solicitantes (quienes publicaron el trabajo)
+  const solicitantesIds = Array.from(new Set(listaTrabajos.map((t) => t.user_id).filter(Boolean)));
+  const perfilesMap: Record<string, any> = {};
+
+  if (solicitantesIds.length > 0) {
+    const { data: perfilesData } = await supabase
+      .from('perfiles')
+      .select('id, nombre, nombre_completo, avatar_url')
+      .in('id', solicitantesIds);
+
+    if (perfilesData) {
+      perfilesData.forEach((p) => {
+        perfilesMap[p.id] = p;
+      });
+    }
+  }
+
+  // Obtener reseñas que YO (trabajador) he enviado para estos trabajos
+  const trabajoIds = listaTrabajos.map((t) => t.id);
+  const { data: misResenas } = await supabase
+    .from('resenas')
+    .select('trabajo_id, calificacion, comentario')
+    .eq('autor_id', userId)
+    .in('trabajo_id', trabajoIds);
+
+  const resenasMap: Record<string, { calificacion: number; comentario: string }> = {};
+  if (misResenas) {
+    misResenas.forEach((r: any) => {
+      resenasMap[r.trabajo_id] = {
+        calificacion: Number(r.calificacion) || 5,
+        comentario: r.comentario || '',
+      };
+    });
+  }
+
+  return listaTrabajos.map((t: any) => {
+    const perf = perfilesMap[t.user_id] || {};
+    const res = resenasMap[t.id];
+
+    return {
+      id: String(t.id),
+      titulo: t.titulo,
+      categoria: t.categorias?.nombre || 'General',
+      fecha: new Date(t.created_at).toLocaleDateString('es-CL'),
+      monto: `$${Number(t.monto || 0).toLocaleString('es-CL')}`,
+      solicitanteId: t.user_id || '',
+      solicitanteNombre: perf.nombre || perf.nombre_completo || 'Solicitante',
+      solicitanteAvatar: perf.avatar_url || null,
+      calificadoPorMi: Boolean(res),
+      miCalificacion: res || null,
+    };
+  });
 };
 
 export const aceptarPostulante = async (trabajoId: string, postulacionId: string, postulanteId: string) => {
@@ -289,6 +446,139 @@ export const editarMiPublicacion = async (
   }
 };
 
+/**
+ * Función universal para calificar a una contraparte (de empleador a trabajador, o de trabajador a empleador).
+ * Recalcula el promedio del usuario evaluado e incrementa trabajos completados si aplica.
+ */
+export const enviarCalificacionMutua = async ({
+  trabajoId,
+  autorId,
+  evaluadoId,
+  calificacion,
+  comentario,
+  esFinalizacion = false,
+}: {
+  trabajoId: string;
+  autorId: string;
+  evaluadoId: string;
+  calificacion: number;
+  comentario: string;
+  esFinalizacion?: boolean;
+}) => {
+  if (!evaluadoId) {
+    throw new Error('No se encontró a la contraparte a calificar.');
+  }
+
+  // 1. Si es la finalización por parte del empleador, cambiar estado del trabajo a completado
+  if (esFinalizacion) {
+    try {
+      const { error: errTrabajo } = await supabase
+        .from('trabajos')
+        .update({ estado: 'completado', trabajador_id: evaluadoId })
+        .eq('id', trabajoId);
+
+      if (errTrabajo) {
+        console.warn('Advertencia al actualizar estado del trabajo:', errTrabajo.message);
+      }
+    } catch (e: any) {
+      console.warn('Error capturado en update trabajo:', e.message);
+    }
+
+    try {
+      const { data: perf } = await supabase
+        .from('perfiles')
+        .select('trabajos_realizados')
+        .eq('id', evaluadoId)
+        .single();
+
+      if (perf) {
+        await supabase
+          .from('perfiles')
+          .update({ trabajos_realizados: (perf.trabajos_realizados || 0) + 1 })
+          .eq('id', evaluadoId);
+      }
+    } catch (e: any) {
+      console.warn('Error capturado en update trabajos_realizados:', e.message);
+    }
+  }
+
+  // 2. Guardar o actualizar la reseña en la tabla 'resenas'
+  const { data: resenaExistente } = await supabase
+    .from('resenas')
+    .select('id')
+    .eq('trabajo_id', trabajoId)
+    .eq('autor_id', autorId)
+    .maybeSingle();
+
+  const resenaObj: any = {
+    trabajo_id: trabajoId,
+    autor_id: autorId,
+    evaluado_id: evaluadoId,
+    usuario_evaluado_id: evaluadoId,
+    calificacion,
+    comentario: comentario.trim() || 'Excelente labor y trato cordial.',
+  };
+
+  if (resenaExistente?.id) {
+    let { error: errUpd } = await supabase
+      .from('resenas')
+      .update(resenaObj)
+      .eq('id', resenaExistente.id);
+
+    // Si falló por falta del campo 'estado' en el trigger de PostgreSQL, reintentar pasando 'estado'
+    if (errUpd && errUpd.message?.toLowerCase().includes('estado')) {
+      const { error: errRetry } = await supabase
+        .from('resenas')
+        .update({ ...resenaObj, estado: 'completado' })
+        .eq('id', resenaExistente.id);
+      errUpd = errRetry;
+    }
+
+    if (errUpd) throw errUpd;
+  } else {
+    let { error: errIns } = await supabase
+      .from('resenas')
+      .insert([resenaObj]);
+
+    // Si falló por falta del campo 'estado' en el trigger de PostgreSQL, reintentar pasando 'estado'
+    if (errIns && errIns.message?.toLowerCase().includes('estado')) {
+      const { error: errRetry } = await supabase
+        .from('resenas')
+        .insert([{ ...resenaObj, estado: 'completado' }]);
+      errIns = errRetry;
+    }
+
+    if (errIns) throw errIns;
+  }
+
+  // 3. Recalcular promedio y total de reseñas para el usuario evaluado
+  try {
+    const { data: todasLasResenas } = await supabase
+      .from('resenas')
+      .select('calificacion')
+      .or(`evaluado_id.eq.${evaluadoId},usuario_evaluado_id.eq.${evaluadoId}`);
+
+    if (todasLasResenas && todasLasResenas.length > 0) {
+      const total = todasLasResenas.length;
+      const suma = todasLasResenas.reduce((acc, r) => acc + (Number(r.calificacion) || 5), 0);
+      const nuevoPromedio = Number((suma / total).toFixed(1));
+
+      await supabase
+        .from('perfiles')
+        .update({
+          calificacion: nuevoPromedio,
+          total_resenas: total,
+        })
+        .eq('id', evaluadoId);
+    }
+  } catch (e: any) {
+    console.warn('Advertencia al recalcular promedio en perfil:', e.message);
+  }
+};
+
+/**
+ * Mantiene compatibilidad con llamadas existentes para finalizar tareas
+ */
 export const finalizarYCalificarTarea = async (
   trabajoId: string,
   solicitanteId: string,
@@ -323,36 +613,12 @@ export const finalizarYCalificarTarea = async (
     throw new Error('No se encontró al trabajador asignado a esta tarea.');
   }
 
-  // 1. Marcar trabajo como completado
-  const { error: errTrabajo } = await supabase
-    .from('trabajos')
-    .update({ estado: 'completado' })
-    .eq('id', trabajoId);
-
-  if (errTrabajo) throw errTrabajo;
-
-  // 2. Guardar en reseñas actualizando tanto evaluado_id como usuario_evaluado_id
-  const resenaObj: any = {
-    trabajo_id: trabajoId,
-    autor_id: solicitanteId,
-    evaluado_id: targetTrabajadorId,
-    usuario_evaluado_id: targetTrabajadorId,
+  await enviarCalificacionMutua({
+    trabajoId,
+    autorId: solicitanteId,
+    evaluadoId: targetTrabajadorId,
     calificacion,
-    comentario: comentario.trim() || 'Trabajo concluido satisfactoriamente.',
-  };
-
-  const { error: errResena } = await supabase.from('resenas').insert([resenaObj]);
-  if (errResena) throw errResena;
-
-  // 3. Incrementar contador de trabajos realizados
-  const { data: perf } = await supabase
-    .from('perfiles')
-    .select('trabajos_realizados')
-    .eq('id', targetTrabajadorId)
-    .single();
-
-  await supabase
-    .from('perfiles')
-    .update({ trabajos_realizados: (perf?.trabajos_realizados || 0) + 1 })
-    .eq('id', targetTrabajadorId);
+    comentario,
+    esFinalizacion: true,
+  });
 };

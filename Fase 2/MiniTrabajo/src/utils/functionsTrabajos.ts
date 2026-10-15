@@ -26,6 +26,8 @@ export interface TrabajoUI {
   totalPostulantes: number;
   latitud?: number | null;
   longitud?: number | null;
+  lat?: number | null;
+  lng?: number | null;
   distanciaKm?: number | null;
 }
 
@@ -187,15 +189,17 @@ export const fetchTrabajosMuro = async (
 
   return trabajosData.map((t: any) => {
     const perfil = perfilesMap[t.user_id] || {};
-    const tieneCoords = t.latitud != null && t.longitud != null;
+    const latFinal = t.latitud ?? t.lat ?? null;
+    const lngFinal = t.longitud ?? t.lng ?? null;
+    const tieneCoords = latFinal != null && lngFinal != null;
     let distKm: number | null = null;
 
     if (coordsUsuario && tieneCoords) {
       distKm = calcularDistanciaKm(
         coordsUsuario.latitude,
         coordsUsuario.longitude,
-        Number(t.latitud),
-        Number(t.longitud)
+        Number(latFinal),
+        Number(lngFinal)
       );
     }
 
@@ -237,8 +241,10 @@ export const fetchTrabajosMuro = async (
       imagenes: Array.isArray(t.imagenes) ? t.imagenes : [],
       fechaPublicacion: t.created_at ? new Date(t.created_at).toLocaleDateString('es-CL') : 'Hoy',
       totalPostulantes: 0,
-      latitud: t.latitud,
-      longitud: t.longitud,
+      latitud: latFinal,
+      longitud: lngFinal,
+      lat: latFinal,
+      lng: lngFinal,
       distanciaKm: distKm,
     };
   });
@@ -280,15 +286,15 @@ export const fetchDetalleSolicitante = async (solicitanteId: string): Promise<So
         calificacion,
         comentario,
         created_at,
-        perfiles:autor_id ( nombre_completo )
+        perfiles:autor_id ( nombre, nombre_completo )
       `)
-      .eq('usuario_evaluado_id', solicitanteId)
+      .or(`usuario_evaluado_id.eq.${solicitanteId},evaluado_id.eq.${solicitanteId}`)
       .order('created_at', { ascending: false })
-      .limit(6);
+      .limit(10);
 
     const resenasMapeadas = (resenasData || []).map((r: any) => ({
       id: String(r.id),
-      autor: r.perfiles?.nombre_completo || 'Usuario',
+      autor: r.perfiles?.nombre || r.perfiles?.nombre_completo || 'Usuario',
       calificacion: Number(r.calificacion) || 5,
       comentario: r.comentario || '',
     }));

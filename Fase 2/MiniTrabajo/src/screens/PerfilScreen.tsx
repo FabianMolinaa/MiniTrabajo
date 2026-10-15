@@ -38,7 +38,16 @@ import {
   editarMiPublicacion,
   eliminarMiPublicacion,
   finalizarYCalificarTarea,
+  enviarCalificacionMutua,
 } from "../utils/functionsPerfil";
+
+export interface CalificacionTarget {
+  trabajoId: string;
+  evaluadoId: string;
+  nombreContraparte: string;
+  rolContraparte: 'trabajador' | 'empleador';
+  esFinalizacion?: boolean;
+}
 
 interface ComunaItem {
   id: number;
@@ -96,11 +105,11 @@ export default function PerfilScreen() {
   const [historialPostulante, setHistorialPostulante] = useState<TrabajoRealizadoItem[]>([]);
   const [tabPostulante, setTabPostulante] = useState<"resenas" | "historial">("resenas");
 
-  // Calificación
-  const [tareaAFinalizar, setTareaAFinalizar] = useState<MiPublicacion | null>(null);
+  // Calificación Mutua
+  const [targetCalificar, setTargetCalificar] = useState<CalificacionTarget | null>(null);
   const [estrellasCalificacion, setEstrellasCalificacion] = useState(5);
   const [comentarioCalificacion, setComentarioCalificacion] = useState("");
-  const [guardandoFinalizacion, setGuardandoFinalizacion] = useState(false);
+  const [guardandoCalificacion, setGuardandoCalificacion] = useState(false);
 
   // Menú de opciones (3 puntos)
   const [tareaOpciones, setTareaOpciones] = useState<MiPublicacion | null>(null);
@@ -113,6 +122,7 @@ export default function PerfilScreen() {
   // Modales generales
   const [tabPublicaciones, setTabPublicaciones] = useState<"activas" | "completadas">("activas");
   const [modalVisible, setModalVisible] = useState<"ninguno" | "resenas" | "historial" | "publicaciones" | "creditos">("ninguno");
+  const [modalAnterior, setModalAnterior] = useState<"ninguno" | "resenas" | "historial" | "publicaciones" | "creditos">("ninguno");
   const [modalEditarVisible, setModalEditarVisible] = useState(false);
   const [modalComunasVisible, setModalComunasVisible] = useState(false);
   const [guardandoCambios, setGuardandoCambios] = useState(false);
@@ -348,27 +358,85 @@ export default function PerfilScreen() {
     );
   };
 
-  const handleConfirmarFinalizacion = async () => {
-    if (!tareaAFinalizar || !usuarioId) return;
-    setGuardandoFinalizacion(true);
+  const handleAbrirCalificar = (target: CalificacionTarget, origen: "ninguno" | "resenas" | "historial" | "publicaciones" | "creditos" = "ninguno") => {
+    // En iOS evitamos apilar 2 modales nativos activos simultáneamente:
+    // guardamos el origen y cerramos el modal previo
+    if (origen !== "ninguno") {
+      setModalAnterior(origen);
+      setModalVisible("ninguno");
+    } else if (modalVisible !== "ninguno") {
+      setModalAnterior(modalVisible);
+      setModalVisible("ninguno");
+    }
+    setTareaSeleccionada(null);
+    setTargetCalificar(target);
+    setEstrellasCalificacion(5);
+    setComentarioCalificacion("");
+  };
+
+  const handleCerrarCalificar = () => {
+    setTargetCalificar(null);
+    setComentarioCalificacion("");
+    setEstrellasCalificacion(5);
+    // Restaurar modal anterior si existía
+    if (modalAnterior !== "ninguno") {
+      setModalVisible(modalAnterior);
+      setModalAnterior("ninguno");
+    }
+  };
+
+  const getTextoEstrellas = (estrellas: number) => {
+    switch (estrellas) {
+      case 1:
+        return "1/5 - Muy mala experiencia";
+      case 2:
+        return "2/5 - Regular / Desacuerdos";
+      case 3:
+        return "3/5 - Aceptable / Correcto";
+      case 4:
+        return "4/5 - Muy buena labor y trato";
+      case 5:
+        return "5/5 - ¡Excelente experiencia!";
+      default:
+        return `${estrellas}/5`;
+    }
+  };
+
+  const handleConfirmarCalificacion = async () => {
+    if (!targetCalificar || !usuarioId) return;
+    setGuardandoCalificacion(true);
+    const anteriorModal = modalAnterior;
     try {
-      await finalizarYCalificarTarea(
-        tareaAFinalizar.id,
-        usuarioId,
-        tareaAFinalizar.trabajador_id,
-        estrellasCalificacion,
-        comentarioCalificacion
-      );
-      setTareaAFinalizar(null);
+      await enviarCalificacionMutua({
+        trabajoId: targetCalificar.trabajoId,
+        autorId: usuarioId,
+        evaluadoId: targetCalificar.evaluadoId,
+        calificacion: estrellasCalificacion,
+        comentario: comentarioCalificacion,
+        esFinalizacion: targetCalificar.esFinalizacion,
+      });
+
+      setTargetCalificar(null);
+      setModalAnterior("ninguno");
       setTareaSeleccionada(null);
       setComentarioCalificacion("");
       setEstrellasCalificacion(5);
       await cargarDatos();
-      dispararAlerta("¡Tarea Finalizada!", "Se registró el cierre y la calificación con éxito.", "exito");
+
+      // Si venía de historial o mis publicaciones, reabrir para ver el estado actualizado
+      if (anteriorModal !== "ninguno") {
+        setModalVisible(anteriorModal);
+      }
+
+      dispararAlerta(
+        "¡Calificación Registrada!",
+        "La reseña se ha guardado y el perfil de la contraparte fue actualizado.",
+        "exito"
+      );
     } catch (err: any) {
-      dispararAlerta("Error al calificar", err.message || "No se pudo cerrar la tarea.", "error");
+      dispararAlerta("Error al calificar", err.message || "No se pudo registrar la calificación.", "error");
     } finally {
-      setGuardandoFinalizacion(false);
+      setGuardandoCalificacion(false);
     }
   };
 
@@ -570,14 +638,19 @@ const handleGuardarPerfil = async () => {
 
       {/* MODAL 1: RESEÑAS */}
       <Modal animationType="slide" transparent={true} visible={modalVisible === "resenas"} onRequestClose={() => setModalVisible("ninguno")}>
-        <Pressable style={styles.modalOverlay} onPress={() => setModalVisible("ninguno")}>
-          <Pressable style={styles.modalSheet} onPress={(e) => e.stopPropagation()}>
+        <View style={styles.modalOverlay}>
+          <TouchableOpacity
+            style={styles.modalBackdropTouch}
+            activeOpacity={1}
+            onPress={() => setModalVisible("ninguno")}
+          />
+          <View style={styles.modalSheet}>
             <View style={styles.sheetHeader}>
               <View style={styles.sheetTitleRow}>
                 <Ionicons name="star" size={18} color="#eab308" />
                 <Text style={styles.sheetTitle}>Reseñas Recibidas ({resenasRecibidas.length})</Text>
               </View>
-              <TouchableOpacity onPress={() => setModalVisible("ninguno")}>
+              <TouchableOpacity onPress={() => setModalVisible("ninguno")} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
                 <Ionicons name="close" size={24} color={colors.textPrimary} />
               </TouchableOpacity>
             </View>
@@ -588,7 +661,16 @@ const handleGuardarPerfil = async () => {
                 resenasRecibidas.map((r) => (
                   <View key={r.id} style={styles.reviewCard}>
                     <View style={styles.reviewHeader}>
-                      <Text style={styles.reviewAuthor}>{r.autor}</Text>
+                      <View style={styles.reviewAuthorRow}>
+                        <View style={styles.reviewAuthorAvatar}>
+                          {r.avatarUrl ? (
+                            <Image source={{ uri: r.avatarUrl }} style={{ width: "100%", height: "100%" }} />
+                          ) : (
+                            <Ionicons name="person" size={12} color={colors.textSecondary} />
+                          )}
+                        </View>
+                        <Text style={styles.reviewAuthor}>{r.autor}</Text>
+                      </View>
                       <View style={styles.starsRow}>
                         {[...Array(r.calificacion)].map((_, i) => (
                           <Ionicons key={i} name="star" size={12} color="#eab308" />
@@ -601,20 +683,25 @@ const handleGuardarPerfil = async () => {
                 ))
               )}
             </ScrollView>
-          </Pressable>
-        </Pressable>
+          </View>
+        </View>
       </Modal>
 
       {/* MODAL 2: HISTORIAL DE TRABAJOS HECHOS */}
       <Modal animationType="slide" transparent={true} visible={modalVisible === "historial"} onRequestClose={() => setModalVisible("ninguno")}>
-        <Pressable style={styles.modalOverlay} onPress={() => setModalVisible("ninguno")}>
-          <Pressable style={styles.modalSheet} onPress={(e) => e.stopPropagation()}>
+        <View style={styles.modalOverlay}>
+          <TouchableOpacity
+            style={styles.modalBackdropTouch}
+            activeOpacity={1}
+            onPress={() => setModalVisible("ninguno")}
+          />
+          <View style={styles.modalSheet}>
             <View style={styles.sheetHeader}>
               <View style={styles.sheetTitleRow}>
                 <Ionicons name="briefcase" size={18} color={colors.accentBlue} />
                 <Text style={styles.sheetTitle}>Trabajos Completados ({historialTrabajos.length})</Text>
               </View>
-              <TouchableOpacity onPress={() => setModalVisible("ninguno")}>
+              <TouchableOpacity onPress={() => setModalVisible("ninguno")} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
                 <Ionicons name="close" size={24} color={colors.textPrimary} />
               </TouchableOpacity>
             </View>
@@ -632,31 +719,81 @@ const handleGuardarPerfil = async () => {
                       <Text style={styles.taskMonto}>{item.monto}</Text>
                     </View>
                     <Text style={styles.taskTitle}>{item.titulo}</Text>
+
+                    {item.solicitanteNombre ? (
+                      <View style={styles.taskContraparteRow}>
+                        <View style={styles.taskContraparteAvatar}>
+                          {item.solicitanteAvatar ? (
+                            <Image source={{ uri: item.solicitanteAvatar }} style={{ width: "100%", height: "100%" }} />
+                          ) : (
+                            <Ionicons name="person" size={12} color={colors.textSecondary} />
+                          )}
+                        </View>
+                        <Text style={styles.taskContraparteText}>Publicado por: {item.solicitanteNombre}</Text>
+                      </View>
+                    ) : null}
+
                     <View style={styles.taskFooter}>
                       <Text style={styles.taskDate}>{item.fecha}</Text>
-                      <View style={styles.badgeAcceptedTag}>
-                        <Ionicons name="checkmark-done" size={12} color={colors.accentGreen} />
-                        <Text style={styles.badgeAcceptedText}>Completado</Text>
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                        {item.calificadoPorMi ? (
+                          <View style={styles.badgeReviewedTag}>
+                            <Ionicons name="star" size={12} color="#eab308" />
+                            <Text style={styles.badgeReviewedText}>
+                              Calificaste ({item.miCalificacion?.calificacion || 5}★)
+                            </Text>
+                          </View>
+                        ) : item.solicitanteId ? (
+                          <TouchableOpacity
+                            style={styles.btnReviewAction}
+                            activeOpacity={0.7}
+                            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                            onPress={() => {
+                              handleAbrirCalificar(
+                                {
+                                  trabajoId: item.id,
+                                  evaluadoId: item.solicitanteId,
+                                  nombreContraparte: item.solicitanteNombre || "Empleador",
+                                  rolContraparte: "empleador",
+                                  esFinalizacion: false,
+                                },
+                                "historial"
+                              );
+                            }}
+                          >
+                            <Ionicons name="star" size={13} color="#eab308" />
+                            <Text style={styles.btnReviewActionText}>Calificar empleador</Text>
+                          </TouchableOpacity>
+                        ) : null}
+                        <View style={styles.badgeAcceptedTag}>
+                          <Ionicons name="checkmark-done" size={12} color={colors.accentGreen} />
+                          <Text style={styles.badgeAcceptedText}>Completado</Text>
+                        </View>
                       </View>
                     </View>
                   </View>
                 ))
               )}
             </ScrollView>
-          </Pressable>
-        </Pressable>
+          </View>
+        </View>
       </Modal>
 
       {/* MODAL 3: MIS PUBLICACIONES */}
       <Modal animationType="slide" transparent={true} visible={modalVisible === "publicaciones"} onRequestClose={() => setModalVisible("ninguno")}>
-        <Pressable style={styles.modalOverlay} onPress={() => setModalVisible("ninguno")}>
-          <Pressable style={styles.modalSheet} onPress={(e) => e.stopPropagation()}>
+        <View style={styles.modalOverlay}>
+          <TouchableOpacity
+            style={styles.modalBackdropTouch}
+            activeOpacity={1}
+            onPress={() => setModalVisible("ninguno")}
+          />
+          <View style={styles.modalSheet}>
             <View style={styles.sheetHeader}>
               <View style={styles.sheetTitleRow}>
                 <Ionicons name="document-text" size={18} color={colors.accentBlue} />
                 <Text style={styles.sheetTitle}>Mis Publicaciones</Text>
               </View>
-              <TouchableOpacity onPress={() => setModalVisible("ninguno")}>
+              <TouchableOpacity onPress={() => setModalVisible("ninguno")} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
                 <Ionicons name="close" size={24} color={colors.textPrimary} />
               </TouchableOpacity>
             </View>
@@ -678,42 +815,91 @@ const handleGuardarPerfil = async () => {
 
             <ScrollView showsVerticalScrollIndicator={false}>
               {(tabPublicaciones === "activas" ? publicacionesActivas : publicacionesCompletadas).map((tarea) => (
-                <TouchableOpacity key={tarea.id} activeOpacity={0.8} style={styles.taskCard} onPress={() => handleSeleccionarTarea(tarea)}>
-                  <View style={styles.taskHeader}>
-                    <View style={styles.headerLeftRow}>
-                      <View style={styles.badge}><Text style={styles.badgeText}>{tarea.categoria}</Text></View>
-                      {tarea.imagenes && tarea.imagenes.length > 0 && (
-                        <View style={styles.photosBadgeTag}>
-                          <Ionicons name="image-outline" size={11} color={colors.accentBlue} />
-                          <Text style={styles.photosBadgeText}>{tarea.imagenes.length}</Text>
+                <View key={tarea.id} style={styles.taskCard}>
+                  <TouchableOpacity
+                    activeOpacity={0.7}
+                    onPress={() => handleSeleccionarTarea(tarea)}
+                  >
+                    <View style={styles.taskHeader}>
+                      <View style={styles.headerLeftRow}>
+                        <View style={styles.badge}><Text style={styles.badgeText}>{tarea.categoria}</Text></View>
+                        {tarea.imagenes && tarea.imagenes.length > 0 && (
+                          <View style={styles.photosBadgeTag}>
+                            <Ionicons name="image-outline" size={11} color={colors.accentBlue} />
+                            <Text style={styles.photosBadgeText}>{tarea.imagenes.length}</Text>
+                          </View>
+                        )}
+                      </View>
+
+                      <View style={{ flexDirection: "row", alignItems: "center" }}>
+                        <Text style={styles.taskMonto}>{tarea.monto}</Text>
+                        {tabPublicaciones === "activas" && (
+                          <TouchableOpacity
+                            style={styles.btnOptionsTask}
+                            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                            onPress={() => {
+                              handleAbrirOpcionesTarea(tarea);
+                            }}
+                          >
+                            <Ionicons name="ellipsis-vertical" size={18} color={colors.textSecondary} />
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                    </View>
+
+                    <Text style={styles.taskTitle}>{tarea.titulo}</Text>
+
+                    {tarea.estado === "completado" && tarea.trabajador_nombre ? (
+                      <View style={styles.taskContraparteRow}>
+                        <View style={styles.taskContraparteAvatar}>
+                          {tarea.trabajador_avatar ? (
+                            <Image source={{ uri: tarea.trabajador_avatar }} style={{ width: "100%", height: "100%" }} />
+                          ) : (
+                            <Ionicons name="person" size={12} color={colors.textSecondary} />
+                          )}
                         </View>
-                      )}
-                    </View>
-
-                    <View style={{ flexDirection: "row", alignItems: "center" }}>
-                      <Text style={styles.taskMonto}>{tarea.monto}</Text>
-                      {tabPublicaciones === "activas" && (
-                        <TouchableOpacity
-                          style={styles.btnOptionsTask}
-                          onPress={(e) => {
-                            e.stopPropagation();
-                            handleAbrirOpcionesTarea(tarea);
-                          }}
-                        >
-                          <Ionicons name="ellipsis-vertical" size={18} color={colors.textSecondary} />
-                        </TouchableOpacity>
-                      )}
-                    </View>
-                  </View>
-
-                  <Text style={styles.taskTitle}>{tarea.titulo}</Text>
+                        <Text style={styles.taskContraparteText}>Realizado por: {tarea.trabajador_nombre}</Text>
+                      </View>
+                    ) : null}
+                  </TouchableOpacity>
 
                   <View style={styles.taskFooter}>
                     <Text style={styles.taskDate}>{tarea.fecha}</Text>
                     {tarea.estado === "completado" ? (
-                      <View style={styles.badgeCompletedTag}>
-                        <Ionicons name="checkmark-done" size={12} color={colors.textMuted} />
-                        <Text style={styles.badgeCompletedText}>Completada</Text>
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                        {tarea.calificadoPorMi ? (
+                          <View style={styles.badgeReviewedTag}>
+                            <Ionicons name="star" size={12} color="#eab308" />
+                            <Text style={styles.badgeReviewedText}>
+                              Calificaste ({tarea.miCalificacion?.calificacion || 5}★)
+                            </Text>
+                          </View>
+                        ) : tarea.trabajador_id ? (
+                          <TouchableOpacity
+                            style={styles.btnReviewAction}
+                            activeOpacity={0.7}
+                            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                            onPress={() => {
+                              handleAbrirCalificar(
+                                {
+                                  trabajoId: tarea.id,
+                                  evaluadoId: tarea.trabajador_id!,
+                                  nombreContraparte: tarea.trabajador_nombre || "Trabajador",
+                                  rolContraparte: "trabajador",
+                                  esFinalizacion: false,
+                                },
+                                "publicaciones"
+                              );
+                            }}
+                          >
+                            <Ionicons name="star" size={13} color="#eab308" />
+                            <Text style={styles.btnReviewActionText}>Calificar trabajador</Text>
+                          </TouchableOpacity>
+                        ) : null}
+                        <View style={styles.badgeCompletedTag}>
+                          <Ionicons name="checkmark-done" size={12} color={colors.textMuted} />
+                          <Text style={styles.badgeCompletedText}>Completada</Text>
+                        </View>
                       </View>
                     ) : tarea.estado === "aceptado" ? (
                       <View style={styles.badgeAcceptedTag}>
@@ -729,17 +915,22 @@ const handleGuardarPerfil = async () => {
                       <Text style={styles.noApplicantsText}>Sin postulantes</Text>
                     )}
                   </View>
-                </TouchableOpacity>
+                </View>
               ))}
             </ScrollView>
-          </Pressable>
-        </Pressable>
+          </View>
+        </View>
       </Modal>
 
       {/* MENÚ DE OPCIONES 3 PUNTOS: EDITAR / ELIMINAR */}
       <Modal animationType="fade" transparent={true} visible={tareaOpciones !== null} onRequestClose={() => setTareaOpciones(null)}>
-        <Pressable style={styles.subModalOverlay} onPress={() => setTareaOpciones(null)}>
-          <Pressable style={styles.optionsModalBox} onPress={(e) => e.stopPropagation()}>
+        <View style={styles.subModalOverlay}>
+          <TouchableOpacity
+            style={styles.subModalBackdropTouch}
+            activeOpacity={1}
+            onPress={() => setTareaOpciones(null)}
+          />
+          <View style={styles.optionsModalBox}>
             <Text style={styles.optionsModalTitle} numberOfLines={1}>
               {tareaOpciones?.titulo}
             </Text>
@@ -760,17 +951,22 @@ const handleGuardarPerfil = async () => {
             >
               <Text style={styles.cancelBtnText}>Cerrar</Text>
             </TouchableOpacity>
-          </Pressable>
-        </Pressable>
+          </View>
+        </View>
       </Modal>
 
       {/* MODAL DE EDICIÓN DE PUBLICACIÓN */}
       <Modal animationType="fade" transparent={true} visible={modalEditarTareaVisible} onRequestClose={() => setModalEditarTareaVisible(false)}>
-        <Pressable style={styles.subModalOverlay} onPress={() => setModalEditarTareaVisible(false)}>
-          <Pressable style={styles.subModalBox} onPress={(e) => e.stopPropagation()}>
+        <View style={styles.subModalOverlay}>
+          <TouchableOpacity
+            style={styles.subModalBackdropTouch}
+            activeOpacity={1}
+            onPress={() => setModalEditarTareaVisible(false)}
+          />
+          <View style={styles.subModalBox}>
             <View style={styles.sheetHeader}>
               <Text style={styles.sheetTitle}>Editar Publicación</Text>
-              <TouchableOpacity onPress={() => setModalEditarTareaVisible(false)}>
+              <TouchableOpacity onPress={() => setModalEditarTareaVisible(false)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
                 <Ionicons name="close-circle" size={22} color={colors.textMuted} />
               </TouchableOpacity>
             </View>
@@ -827,14 +1023,19 @@ const handleGuardarPerfil = async () => {
                 )}
               </TouchableOpacity>
             </ScrollView>
-          </Pressable>
-        </Pressable>
+          </View>
+        </View>
       </Modal>
 
       {/* SUB-MODAL: GESTIÓN DE POSTULANTES DE LA TAREA */}
       <Modal animationType="fade" transparent={true} visible={tareaSeleccionada !== null} onRequestClose={() => setTareaSeleccionada(null)}>
-        <Pressable style={styles.subModalOverlay} onPress={() => setTareaSeleccionada(null)}>
-          <Pressable style={styles.subModalBox} onPress={(e) => e.stopPropagation()}>
+        <View style={styles.subModalOverlay}>
+          <TouchableOpacity
+            style={styles.subModalBackdropTouch}
+            activeOpacity={1}
+            onPress={() => setTareaSeleccionada(null)}
+          />
+          <View style={styles.subModalBox}>
             {tareaSeleccionada && (
               <>
                 <View style={styles.sheetHeader}>
@@ -848,15 +1049,30 @@ const handleGuardarPerfil = async () => {
                         : "Postulantes"}
                     </Text>
                   </View>
-                  <TouchableOpacity onPress={() => setTareaSeleccionada(null)}>
+                  <TouchableOpacity onPress={() => setTareaSeleccionada(null)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
                     <Ionicons name="close" size={24} color={colors.textPrimary} />
                   </TouchableOpacity>
                 </View>
 
-                {/* ACCIONES DEL CONTRATADOR CUANDO LA TAREA ESTÁ EN PROGRESO */}
+                {/* ACCIONES DEL CONTRATADOR CUANDO LA TAREA ESTÁ EN PROGRESO O COMPLETADA */}
                 {tareaSeleccionada.estado === "aceptado" && (
                   <View style={styles.managementActionsRow}>
-                    <TouchableOpacity style={styles.btnFinalizarTarea} activeOpacity={0.85} onPress={() => setTareaAFinalizar(tareaSeleccionada)}>
+                    <TouchableOpacity
+                      style={styles.btnFinalizarTarea}
+                      activeOpacity={0.85}
+                      onPress={() => {
+                        handleAbrirCalificar(
+                          {
+                            trabajoId: tareaSeleccionada.id,
+                            evaluadoId: tareaSeleccionada.trabajador_id || "",
+                            nombreContraparte: tareaSeleccionada.trabajador_nombre || "Trabajador",
+                            rolContraparte: "trabajador",
+                            esFinalizacion: true,
+                          },
+                          "publicaciones"
+                        );
+                      }}
+                    >
                       <Ionicons name="checkmark-circle" size={17} color="#ffffff" />
                       <Text style={styles.btnFinalizarTareaText}>Finalizar y Calificar</Text>
                     </TouchableOpacity>
@@ -865,6 +1081,40 @@ const handleGuardarPerfil = async () => {
                       <Ionicons name="person-remove-outline" size={16} color="#ef4444" />
                       <Text style={styles.btnCancelarAcuerdoText}>Cancelar acuerdo con trabajador</Text>
                     </TouchableOpacity>
+                  </View>
+                )}
+
+                {tareaSeleccionada.estado === "completado" && (
+                  <View style={[styles.managementActionsRow, { marginBottom: 12 }]}>
+                    {tareaSeleccionada.calificadoPorMi ? (
+                      <View style={styles.badgeReviewedTag}>
+                        <Ionicons name="star" size={13} color="#eab308" />
+                        <Text style={styles.badgeReviewedText}>
+                          Ya calificaste a este trabajador ({tareaSeleccionada.miCalificacion?.calificacion || 5}★)
+                        </Text>
+                      </View>
+                    ) : tareaSeleccionada.trabajador_id ? (
+                      <TouchableOpacity
+                        style={styles.btnReviewAction}
+                        activeOpacity={0.7}
+                        hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                        onPress={() => {
+                          handleAbrirCalificar(
+                            {
+                              trabajoId: tareaSeleccionada.id,
+                              evaluadoId: tareaSeleccionada.trabajador_id!,
+                              nombreContraparte: tareaSeleccionada.trabajador_nombre || "Trabajador",
+                              rolContraparte: "trabajador",
+                              esFinalizacion: false,
+                            },
+                            "publicaciones"
+                          );
+                        }}
+                      >
+                        <Ionicons name="star" size={14} color="#eab308" />
+                        <Text style={styles.btnReviewActionText}>Calificar al trabajador asignado</Text>
+                      </TouchableOpacity>
+                    ) : null}
                   </View>
                 )}
 
@@ -939,19 +1189,24 @@ const handleGuardarPerfil = async () => {
                 </ScrollView>
               </>
             )}
-          </Pressable>
-        </Pressable>
+          </View>
+        </View>
       </Modal>
 
       {/* SUB-MODAL: PERFIL POSTULANTE */}
       <Modal animationType="fade" transparent={true} visible={postulanteDetalle !== null} onRequestClose={() => setPostulanteDetalle(null)}>
-        <Pressable style={styles.subModalOverlay} onPress={() => setPostulanteDetalle(null)}>
-          <Pressable style={styles.applicantProfileBox} onPress={(e) => e.stopPropagation()}>
+        <View style={styles.subModalOverlay}>
+          <TouchableOpacity
+            style={styles.subModalBackdropTouch}
+            activeOpacity={1}
+            onPress={() => setPostulanteDetalle(null)}
+          />
+          <View style={styles.applicantProfileBox}>
             {postulanteDetalle && (
               <>
                 <View style={styles.sheetHeader}>
                   <Text style={styles.sheetTitle}>Perfil del Postulante</Text>
-                  <TouchableOpacity onPress={() => setPostulanteDetalle(null)}>
+                  <TouchableOpacity onPress={() => setPostulanteDetalle(null)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
                     <Ionicons name="close" size={22} color={colors.textPrimary} />
                   </TouchableOpacity>
                 </View>
@@ -1000,7 +1255,16 @@ const handleGuardarPerfil = async () => {
                       resenasPostulante.map((r) => (
                         <View key={r.id} style={styles.reviewCard}>
                           <View style={styles.reviewHeader}>
-                            <Text style={styles.reviewAuthor}>{r.autor}</Text>
+                            <View style={styles.reviewAuthorRow}>
+                              <View style={styles.reviewAuthorAvatar}>
+                                {r.avatarUrl ? (
+                                  <Image source={{ uri: r.avatarUrl }} style={{ width: "100%", height: "100%" }} />
+                                ) : (
+                                  <Ionicons name="person" size={12} color={colors.textSecondary} />
+                                )}
+                              </View>
+                              <Text style={styles.reviewAuthor}>{r.autor}</Text>
+                            </View>
                             <View style={styles.starsRow}>
                               {[...Array(r.calificacion)].map((_, i) => (
                                 <Ionicons key={i} name="star" size={11} color="#eab308" />
@@ -1031,68 +1295,110 @@ const handleGuardarPerfil = async () => {
                 </ScrollView>
               </>
             )}
-          </Pressable>
-        </Pressable>
+          </View>
+        </View>
       </Modal>
 
-      {/* SUB-MODAL: CALIFICACIÓN */}
-      <Modal animationType="fade" transparent={true} visible={tareaAFinalizar !== null} onRequestClose={() => setTareaAFinalizar(null)}>
-        <Pressable style={styles.subModalOverlay} onPress={() => setTareaAFinalizar(null)}>
-          <Pressable style={styles.subModalBox} onPress={(e) => e.stopPropagation()}>
+      {/* SUB-MODAL: CALIFICACIÓN MUTUA */}
+      <Modal animationType="fade" transparent={true} visible={targetCalificar !== null} onRequestClose={handleCerrarCalificar}>
+        <View style={styles.subModalOverlay}>
+          <TouchableOpacity
+            style={styles.subModalBackdropTouch}
+            activeOpacity={1}
+            onPress={handleCerrarCalificar}
+          />
+          <View style={styles.subModalBox}>
             <View style={styles.sheetHeader}>
-              <Text style={styles.sheetTitle}>Finalizar Tarea</Text>
-              <TouchableOpacity onPress={() => setTareaAFinalizar(null)}>
+              <Text style={styles.sheetTitle}>
+                {targetCalificar?.esFinalizacion ? "Finalizar y Calificar" : "Calificar Usuario"}
+              </Text>
+              <TouchableOpacity onPress={handleCerrarCalificar} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
                 <Ionicons name="close" size={24} color={colors.textPrimary} />
               </TouchableOpacity>
             </View>
 
-            <Text style={styles.reviewModalDesc}>Califica la labor realizada por el trabajador:</Text>
-            <View style={styles.starSelectRow}>
-              {[1, 2, 3, 4, 5].map((star) => (
-                <TouchableOpacity key={star} activeOpacity={0.7} onPress={() => setEstrellasCalificacion(star)}>
-                  <Ionicons name={star <= estrellasCalificacion ? "star" : "star-outline"} size={32} color="#eab308" />
+            {targetCalificar && (
+              <>
+                <View style={styles.reviewModalTargetBadge}>
+                  <Text style={styles.reviewModalTargetBadgeText}>
+                    {targetCalificar.rolContraparte === "trabajador" ? "🛠️ Calificando al trabajador: " : "📋 Calificando al empleador: "}
+                    {targetCalificar.nombreContraparte}
+                  </Text>
+                </View>
+
+                <Text style={styles.reviewModalDesc}>
+                  {targetCalificar.rolContraparte === "trabajador"
+                    ? "¿Cómo fue el desempeño y cumplimiento del servicio?"
+                    : "¿Cómo fue el trato, claridad y cumplimiento del pago?"}
+                </Text>
+
+                <View style={styles.starSelectRow}>
+                  {[1, 2, 3, 4, 5].map((star) => (
+                    <TouchableOpacity
+                      key={star}
+                      activeOpacity={0.7}
+                      hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
+                      onPress={() => setEstrellasCalificacion(star)}
+                    >
+                      <Ionicons name={star <= estrellasCalificacion ? "star" : "star-outline"} size={32} color="#eab308" />
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                <Text style={styles.starFeedbackText}>{getTextoEstrellas(estrellasCalificacion)}</Text>
+
+                <View style={styles.reviewInputBox}>
+                  <TextInput
+                    style={styles.reviewInputField}
+                    placeholder="Escribe tu reseña o comentario..."
+                    placeholderTextColor={colors.textMuted}
+                    multiline
+                    numberOfLines={3}
+                    value={comentarioCalificacion}
+                    onChangeText={setComentarioCalificacion}
+                    textAlignVertical="top"
+                  />
+                </View>
+
+                <TouchableOpacity
+                  style={styles.btnConfirmarFinalizacion}
+                  activeOpacity={0.8}
+                  onPress={handleConfirmarCalificacion}
+                  disabled={guardandoCalificacion}
+                >
+                  {guardandoCalificacion ? (
+                    <ActivityIndicator size="small" color="#ffffff" />
+                  ) : (
+                    <>
+                      <Ionicons name="checkmark-done" size={18} color="#ffffff" />
+                      <Text style={styles.btnConfirmarFinalizacionText}>
+                        {targetCalificar.esFinalizacion ? "Confirmar y Finalizar" : "Publicar Reseña"}
+                      </Text>
+                    </>
+                  )}
                 </TouchableOpacity>
-              ))}
-            </View>
-
-            <View style={styles.reviewInputBox}>
-              <TextInput
-                style={styles.reviewInputField}
-                placeholder="Escribe tu reseña..."
-                placeholderTextColor={colors.textMuted}
-                multiline
-                numberOfLines={3}
-                value={comentarioCalificacion}
-                onChangeText={setComentarioCalificacion}
-                textAlignVertical="top"
-              />
-            </View>
-
-            <TouchableOpacity style={styles.btnConfirmarFinalizacion} activeOpacity={0.85} onPress={handleConfirmarFinalizacion} disabled={guardandoFinalizacion}>
-              {guardandoFinalizacion ? (
-                <ActivityIndicator size="small" color="#ffffff" />
-              ) : (
-                <>
-                  <Ionicons name="checkmark-done" size={18} color="#ffffff" />
-                  <Text style={styles.btnConfirmarFinalizacionText}>Confirmar y Calificar</Text>
-                </>
-              )}
-            </TouchableOpacity>
-          </Pressable>
-        </Pressable>
+              </>
+            )}
+          </View>
+        </View>
       </Modal>
 
       {/* MODAL 4: EDICIÓN DE PERFIL */}
       <Modal animationType="slide" transparent={true} visible={modalEditarVisible} onRequestClose={() => setModalEditarVisible(false)}>
         <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.modalOverlay}>
-          <Pressable style={styles.modalOverlay} onPress={() => setModalEditarVisible(false)}>
-            <Pressable style={styles.modalSheet} onPress={(e) => e.stopPropagation()}>
+          <View style={styles.modalOverlay}>
+            <TouchableOpacity
+              style={styles.modalBackdropTouch}
+              activeOpacity={1}
+              onPress={() => setModalEditarVisible(false)}
+            />
+            <View style={styles.modalSheet}>
               <View style={styles.sheetHeader}>
                 <View style={styles.sheetTitleRow}>
                   <Ionicons name="pencil" size={18} color={colors.accentBlue} />
                   <Text style={styles.sheetTitle}>Editar Perfil</Text>
                 </View>
-                <TouchableOpacity onPress={() => setModalEditarVisible(false)}>
+                <TouchableOpacity onPress={() => setModalEditarVisible(false)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
                   <Ionicons name="close" size={24} color={colors.textPrimary} />
                 </TouchableOpacity>
               </View>
@@ -1136,18 +1442,25 @@ const handleGuardarPerfil = async () => {
                   </TouchableOpacity>
                 </View>
               </ScrollView>
-            </Pressable>
-          </Pressable>
+            </View>
+          </View>
         </KeyboardAvoidingView>
       </Modal>
 
       {/* SUB-MODAL COMUNAS */}
       <Modal animationType="fade" transparent={true} visible={modalComunasVisible} onRequestClose={() => setModalComunasVisible(false)}>
-        <Pressable style={styles.subModalOverlay} onPress={() => setModalComunasVisible(false)}>
-          <Pressable style={styles.dropdownModalBox} onPress={(e) => e.stopPropagation()}>
+        <View style={styles.subModalOverlay}>
+          <TouchableOpacity
+            style={styles.subModalBackdropTouch}
+            activeOpacity={1}
+            onPress={() => setModalComunasVisible(false)}
+          />
+          <View style={styles.dropdownModalBox}>
             <View style={styles.sheetHeader}>
               <Text style={styles.sheetTitle}>Selecciona tu Comuna</Text>
-              <TouchableOpacity onPress={() => setModalComunasVisible(false)}><Ionicons name="close" size={22} color={colors.textPrimary} /></TouchableOpacity>
+              <TouchableOpacity onPress={() => setModalComunasVisible(false)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                <Ionicons name="close" size={22} color={colors.textPrimary} />
+              </TouchableOpacity>
             </View>
             <FlatList
               data={comunasDisponibles}
@@ -1166,20 +1479,27 @@ const handleGuardarPerfil = async () => {
                 </TouchableOpacity>
               )}
             />
-          </Pressable>
-        </Pressable>
+          </View>
+        </View>
       </Modal>
 
       {/* MODAL 5: CRÉDITOS */}
       <Modal animationType="slide" transparent={true} visible={modalVisible === "creditos"} onRequestClose={() => setModalVisible("ninguno")}>
-        <Pressable style={styles.modalOverlay} onPress={() => setModalVisible("ninguno")}>
-          <Pressable style={styles.modalSheet} onPress={(e) => e.stopPropagation()}>
+        <View style={styles.modalOverlay}>
+          <TouchableOpacity
+            style={styles.modalBackdropTouch}
+            activeOpacity={1}
+            onPress={() => setModalVisible("ninguno")}
+          />
+          <View style={styles.modalSheet}>
             <View style={styles.sheetHeader}>
               <View style={styles.sheetTitleRow}>
                 <Ionicons name="sparkles" size={20} color="#eab308" />
                 <Text style={styles.sheetTitle}>Tus Créditos</Text>
               </View>
-              <TouchableOpacity onPress={() => setModalVisible("ninguno")}><Ionicons name="close" size={24} color={colors.textPrimary} /></TouchableOpacity>
+              <TouchableOpacity onPress={() => setModalVisible("ninguno")} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                <Ionicons name="close" size={24} color={colors.textPrimary} />
+              </TouchableOpacity>
             </View>
             <View style={styles.balanceCard}>
               <Text style={styles.balanceLabel}>Saldo disponible</Text>
@@ -1207,8 +1527,8 @@ const handleGuardarPerfil = async () => {
                 <View style={styles.buyButtonWrap}><Text style={styles.packagePrice}>{pack.precio}</Text></View>
               </TouchableOpacity>
             ))}
-          </Pressable>
-        </Pressable>
+          </View>
+        </View>
       </Modal>
 
       {/* MODAL DE ALERTA PERSONALIZADO (DARK THEME) */}
@@ -1218,8 +1538,13 @@ const handleGuardarPerfil = async () => {
         visible={alerta.visible}
         onRequestClose={cerrarAlerta}
       >
-        <Pressable style={styles.subModalOverlay} onPress={cerrarAlerta}>
-          <Pressable style={styles.customAlertBox} onPress={(e) => e.stopPropagation()}>
+        <View style={styles.subModalOverlay}>
+          <TouchableOpacity
+            style={styles.subModalBackdropTouch}
+            activeOpacity={1}
+            onPress={cerrarAlerta}
+          />
+          <View style={styles.customAlertBox}>
             <View
               style={[
                 styles.customAlertIconWrap,
@@ -1291,8 +1616,8 @@ const handleGuardarPerfil = async () => {
                 </Text>
               </TouchableOpacity>
             </View>
-          </Pressable>
-        </Pressable>
+          </View>
+        </View>
       </Modal>
     </View>
   );

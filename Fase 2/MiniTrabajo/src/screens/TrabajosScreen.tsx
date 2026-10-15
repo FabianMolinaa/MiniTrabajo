@@ -13,7 +13,9 @@ import {
   RefreshControl,
   ActivityIndicator,
   PanResponder,
+  StyleSheet,
 } from 'react-native';
+import MapView, { Marker, Callout, PROVIDER_DEFAULT } from '../components/NativeMaps';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -21,6 +23,11 @@ import * as Location from 'expo-location';
 import { colors } from '../theme/colors';
 import { styles } from '../styles/TrabajosStyles';
 import { supabase } from '../services/supabase';
+import {
+  obtenerCoordenadasTrabajo,
+  darkMapStyle,
+  SANTIAGO_REGION_DEFAULT,
+} from '../utils/mapUtils';
 import {
   TrabajoUI,
   EstadoTrabajo,
@@ -616,12 +623,122 @@ export default function TrabajosScreen() {
           />
         )
       ) : (
-        <View style={styles.mapContainer}>
-          <Ionicons name="map-outline" size={54} color={colors.textMuted} />
-          <Text style={styles.mapTitle}>Vista de Mapa</Text>
-          <Text style={styles.mapSubtitle}>
-            Mostrando tareas en {comunaNombreActual} ({categoriaNombreActual})
-          </Text>
+        <View style={{ flex: 1 }}>
+          <MapView
+            style={StyleSheet.absoluteFill}
+            provider={PROVIDER_DEFAULT}
+            customMapStyle={darkMapStyle}
+            initialRegion={
+              coordenadasUsuario
+                ? {
+                    latitude: coordenadasUsuario.latitude,
+                    longitude: coordenadasUsuario.longitude,
+                    latitudeDelta: 0.08,
+                    longitudeDelta: 0.08,
+                  }
+                : SANTIAGO_REGION_DEFAULT
+            }
+            showsUserLocation={Boolean(coordenadasUsuario)}
+            showsMyLocationButton={false}
+          >
+            {trabajosFiltrados.map((item) => {
+              const coords = obtenerCoordenadasTrabajo(item);
+              const isDestacado = item.destacado;
+
+              return (
+                <Marker
+                  key={item.id}
+                  coordinate={coords}
+                  onPress={() => setTrabajoSeleccionado(item)}
+                >
+                  <View style={{ alignItems: 'center' }}>
+                    <View
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        backgroundColor: '#161b22',
+                        paddingHorizontal: 8,
+                        paddingVertical: 4,
+                        borderRadius: 12,
+                        borderWidth: 1.5,
+                        borderColor: isDestacado ? '#eab308' : colors.accentBlue,
+                        gap: 4,
+                      }}
+                    >
+                      {isDestacado && <Ionicons name="star" size={10} color="#eab308" />}
+                      <Text
+                        style={{
+                          fontSize: 12,
+                          fontWeight: '800',
+                          color: colors.accentGreen,
+                        }}
+                      >
+                        {item.monto}
+                      </Text>
+                    </View>
+                    <View
+                      style={{
+                        width: 0,
+                        height: 0,
+                        borderLeftWidth: 4,
+                        borderRightWidth: 4,
+                        borderTopWidth: 5,
+                        borderLeftColor: 'transparent',
+                        borderRightColor: 'transparent',
+                        borderTopColor: isDestacado ? '#eab308' : colors.accentBlue,
+                      }}
+                    />
+                  </View>
+                  <Callout
+                    tooltip
+                    onPress={() => setTrabajoSeleccionado(item)}
+                  >
+                    <View
+                      style={{
+                        backgroundColor: colors.surface,
+                        padding: 10,
+                        borderRadius: 12,
+                        width: 200,
+                        borderWidth: 1,
+                        borderColor: colors.border,
+                      }}
+                    >
+                      <Text
+                        style={{
+                          fontSize: 13,
+                          fontWeight: '700',
+                          color: colors.textPrimary,
+                          marginBottom: 4,
+                        }}
+                        numberOfLines={2}
+                      >
+                        {item.titulo}
+                      </Text>
+                      <Text
+                        style={{
+                          fontSize: 14,
+                          fontWeight: '800',
+                          color: colors.accentGreen,
+                        }}
+                      >
+                        {item.monto}
+                      </Text>
+                      <Text
+                        style={{
+                          fontSize: 11,
+                          color: colors.accentBlue,
+                          marginTop: 4,
+                          fontWeight: '600',
+                        }}
+                      >
+                        📍 {item.comuna} • Toca para ver detalle →
+                      </Text>
+                    </View>
+                  </Callout>
+                </Marker>
+              );
+            })}
+          </MapView>
         </View>
       )}
 
