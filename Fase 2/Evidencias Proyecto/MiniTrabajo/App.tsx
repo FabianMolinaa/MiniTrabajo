@@ -29,6 +29,7 @@ import { supabase } from "./src/services/supabase";
 
 import AuthScreen from "./src/screens/AuthScreen";
 import TrabajosScreen from "./src/screens/TrabajosScreen";
+import MapaScreen from "./src/screens/MapaScreen";
 import PublicarScreen from "./src/screens/PublicarScreen";
 import PerfilScreen from "./src/screens/PerfilScreen";
 
@@ -133,6 +134,8 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
           let iconName: keyof typeof Ionicons.glyphMap = "briefcase";
           if (route.name === "Trabajos") {
             iconName = isFocused ? "briefcase" : "briefcase-outline";
+          } else if (route.name === "Mapa") {
+            iconName = isFocused ? "map" : "map-outline";
           } else if (route.name === "Publicar") {
             iconName = isFocused ? "add-circle" : "add-circle-outline";
           } else if (route.name === "Perfil") {
@@ -224,6 +227,14 @@ function Navigation() {
           {() => (
             <AnimatedScreenWrapper>
               <TrabajosScreen />
+            </AnimatedScreenWrapper>
+          )}
+        </Tab.Screen>
+
+        <Tab.Screen name="Mapa">
+          {() => (
+            <AnimatedScreenWrapper>
+              <MapaScreen />
             </AnimatedScreenWrapper>
           )}
         </Tab.Screen>
