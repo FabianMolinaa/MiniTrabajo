@@ -13,21 +13,21 @@ import {
   RefreshControl,
   ActivityIndicator,
   PanResponder,
-  StyleSheet,
 } from 'react-native';
-import MapView, { Marker, Callout, PROVIDER_DEFAULT } from '../components/NativeMaps';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
 import { colors } from '../theme/colors';
+import {
+  useFiltros,
+  MONTO_MIN_BASE,
+  MONTO_MAX_BASE,
+  RADIOS_OPCIONES,
+} from '../context/FiltrosContext';
+
 import { styles } from '../styles/TrabajosStyles';
 import { supabase } from '../services/supabase';
-import {
-  obtenerCoordenadasTrabajo,
-  darkMapStyle,
-  SANTIAGO_REGION_DEFAULT,
-} from '../utils/mapUtils';
 import {
   TrabajoUI,
   EstadoTrabajo,
@@ -45,15 +45,8 @@ import {
   formatearDistancia,
 } from '../utils/functionsTrabajos';
 
-const MONTO_MIN_BASE = 0;
-const MONTO_MAX_BASE = 150000;
-const RADIOS_OPCIONES = [
-  { label: '3 km', valor: 3 },
-  { label: '5 km', valor: 5 },
-  { label: '10 km', valor: 10 },
-  { label: '25 km', valor: 25 },
-  { label: 'Todos', valor: null },
-];
+const CAPA_COMPLETA = { position: "absolute" as const, top: 0, left: 0, right: 0, bottom: 0 };
+
 
 interface AlertaPersonalizada {
   visible: boolean;
@@ -73,10 +66,25 @@ export default function TrabajosScreen() {
   const [refrescando, setRefrescando] = useState(false);
   const [postulandoEnCurso, setPostulandoEnCurso] = useState(false);
 
-  const [vista, setVista] = useState<'lista' | 'mapa'>('lista');
+  const {
+    busqueda,
+    setBusqueda,
+    categoriaSelId,
+    setCategoriaSelId,
+    comunaSelId,
+    setComunaSelId,
+    radioDistanciaKm,
+    setRadioDistanciaKm,
+    montoMinimo,
+    setMontoMinimo,
+    montoMaximo,
+    setMontoMaximo,
+    hayFiltrosActivos,
+    limpiarFiltros,
+  } = useFiltros();
+
   const [modalFiltrosVisible, setModalFiltrosVisible] = useState(false);
   const [dropdownVisible, setDropdownVisible] = useState<'ninguno' | 'categoria' | 'comuna'>('ninguno');
-  const [busqueda, setBusqueda] = useState('');
 
   const [trabajoSeleccionado, setTrabajoSeleccionado] = useState<TrabajoUI | null>(null);
   const [solicitanteModal, setSolicitanteModal] = useState<SolicitanteDetalle | null>(null);
@@ -96,14 +104,11 @@ export default function TrabajosScreen() {
   });
 
   const [coordenadasUsuario, setCoordenadasUsuario] = useState<{ latitude: number; longitude: number } | null>(null);
+  const coordenadasUsuarioRef = useRef<{ latitude: number; longitude: number } | null>(null);
 
   const [categorias, setCategorias] = useState<CategoriaFiltro[]>([]);
   const [comunas, setComunas] = useState<ComunaFiltro[]>([]);
-  const [categoriaSelId, setCategoriaSelId] = useState<number | 'todas'>('todas');
-  const [comunaSelId, setComunaSelId] = useState<number | 'todas'>('todas');
-  const [radioDistanciaKm, setRadioDistanciaKm] = useState<number | null>(null);
-  const [montoMinimo, setMontoMinimo] = useState<number>(MONTO_MIN_BASE);
-  const [montoMaximo, setMontoMaximo] = useState<number>(MONTO_MAX_BASE);
+
 
   const sliderWidthRef = useRef<number>(260);
   const minPosRef = useRef<number>(0);
@@ -137,14 +142,15 @@ export default function TrabajosScreen() {
     setAlerta((prev) => ({ ...prev, visible: false }));
   };
 
-  const cargarDatos = useCallback(async () => {
+  const cargarDatos = useCallback(async (coordsOverride?: { latitude: number; longitude: number } | null) => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       const uid = user ? user.id : null;
       setUsuarioId(uid);
 
+      const coords = coordsOverride !== undefined ? coordsOverride : coordenadasUsuarioRef.current;
       const [listaTrabajos, listaCats, listaComs] = await Promise.all([
-        fetchTrabajosMuro(uid, coordenadasUsuario),
+        fetchTrabajosMuro(uid, coords),
         fetchCategoriasFiltro(),
         fetchComunasFiltro(),
       ]);
@@ -152,29 +158,40 @@ export default function TrabajosScreen() {
       setTrabajos(listaTrabajos);
       setCategorias(listaCats);
       setComunas(listaComs);
-
-      Location.getForegroundPermissionsAsync().then(async ({ status }) => {
-        if (status === 'granted') {
-          const pos = await Location.getLastKnownPositionAsync().catch(() => null);
-          if (pos) {
-            setCoordenadasUsuario({
-              latitude: pos.coords.latitude,
-              longitude: pos.coords.longitude,
-            });
-          }
-        }
-      });
     } catch (err) {
       console.error('Error al cargar muro de trabajos:', err);
     } finally {
       setCargando(false);
       setRefrescando(false);
     }
-  }, [coordenadasUsuario]);
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
-      cargarDatos();
+      let activo = true;
+      (async () => {
+        let coords = coordenadasUsuarioRef.current;
+        try {
+          const { status } = await Location.getForegroundPermissionsAsync();
+          if (status === 'granted') {
+            const pos = await Location.getLastKnownPositionAsync().catch(() => null);
+            if (pos && activo) {
+              coords = {
+                latitude: pos.coords.latitude,
+                longitude: pos.coords.longitude,
+              };
+              coordenadasUsuarioRef.current = coords;
+              setCoordenadasUsuario(coords);
+            }
+          }
+        } catch {}
+        if (activo) {
+          await cargarDatos(coords);
+        }
+      })();
+      return () => {
+        activo = false;
+      };
     }, [cargarDatos])
   );
 
@@ -182,6 +199,11 @@ export default function TrabajosScreen() {
     setRefrescando(true);
     cargarDatos();
   }, [cargarDatos]);
+
+  const montoMaximoRef = useRef(montoMaximo);
+  montoMaximoRef.current = montoMaximo;
+  const montoMinimoRef = useRef(montoMinimo);
+  montoMinimoRef.current = montoMinimo;
 
   const panResponderMin = useRef(
     PanResponder.create({
@@ -192,7 +214,7 @@ export default function TrabajosScreen() {
         minPosRef.current = newX;
         const porcentaje = newX / w;
         const valorCalculado = Math.round((porcentaje * MONTO_MAX_BASE) / 5000) * 5000;
-        setMontoMinimo(Math.min(valorCalculado, montoMaximo - 5000));
+        setMontoMinimo(Math.min(valorCalculado, montoMaximoRef.current - 5000));
       },
     })
   ).current;
@@ -206,7 +228,7 @@ export default function TrabajosScreen() {
         maxPosRef.current = newX;
         const porcentaje = newX / w;
         const valorCalculado = Math.round((porcentaje * MONTO_MAX_BASE) / 5000) * 5000;
-        setMontoMaximo(Math.max(valorCalculado, montoMinimo + 5000));
+        setMontoMaximo(Math.max(valorCalculado, montoMinimoRef.current + 5000));
       },
     })
   ).current;
@@ -255,12 +277,6 @@ export default function TrabajosScreen() {
     return coincideBusqueda && coincideCategoria && coincideComuna && coincideMonto && coincideRadio;
   });
 
-  const hayFiltrosActivos =
-    categoriaSelId !== 'todas' ||
-    comunaSelId !== 'todas' ||
-    radioDistanciaKm !== null ||
-    montoMinimo > MONTO_MIN_BASE ||
-    montoMaximo < MONTO_MAX_BASE;
 
   const categoriaNombreActual =
     categoriaSelId === 'todas'
@@ -507,6 +523,23 @@ export default function TrabajosScreen() {
   const leftPx = pctMin * sliderWidthRef.current;
   const rightPx = pctMax * sliderWidthRef.current;
   const widthPx = Math.max(0, rightPx - leftPx);
+  // Estado combinado para evitar presentar modales anidados en iOS
+  const hayCapaAbierta =
+    trabajoSeleccionado !== null ||
+    modalEditarVisible ||
+    solicitanteModal !== null ||
+    cargandoSolicitante ||
+    modalFiltrosVisible ||
+    alerta.visible;
+
+  const cerrarCapaSuperior = () => {
+    if (alerta.visible) return cerrarAlerta();
+    if (solicitanteModal !== null || cargandoSolicitante) return setSolicitanteModal(null);
+    if (modalEditarVisible) return setModalEditarVisible(false);
+    if (modalFiltrosVisible) return setModalFiltrosVisible(false);
+    setTrabajoSeleccionado(null);
+  };
+
 
   return (
     <View style={styles.container}>
@@ -543,14 +576,13 @@ export default function TrabajosScreen() {
       </View>
 
       {/* 2. LISTADO DE TRABAJOS */}
-      {vista === 'lista' ? (
-        cargando && !refrescando ? (
+      {cargando && !refrescando ? (
           <ActivityIndicator size="large" color={colors.accentBlue} style={{ marginTop: 40 }} />
         ) : (
           <FlatList
             data={trabajosFiltrados}
             keyExtractor={(item) => item.id}
-            contentContainerStyle={[styles.listContent, { paddingBottom: buttonBottom + 60 }]}
+            contentContainerStyle={[styles.listContent, { paddingBottom: buttonBottom + 20 }]}
             showsVerticalScrollIndicator={false}
             refreshControl={
               <RefreshControl
@@ -621,152 +653,19 @@ export default function TrabajosScreen() {
               );
             }}
           />
-        )
-      ) : (
-        <View style={{ flex: 1 }}>
-          <MapView
-            style={StyleSheet.absoluteFill}
-            provider={PROVIDER_DEFAULT}
-            customMapStyle={darkMapStyle}
-            initialRegion={
-              coordenadasUsuario
-                ? {
-                    latitude: coordenadasUsuario.latitude,
-                    longitude: coordenadasUsuario.longitude,
-                    latitudeDelta: 0.08,
-                    longitudeDelta: 0.08,
-                  }
-                : SANTIAGO_REGION_DEFAULT
-            }
-            showsUserLocation={Boolean(coordenadasUsuario)}
-            showsMyLocationButton={false}
-          >
-            {trabajosFiltrados.map((item) => {
-              const coords = obtenerCoordenadasTrabajo(item);
-              const isDestacado = item.destacado;
-
-              return (
-                <Marker
-                  key={item.id}
-                  coordinate={coords}
-                  onPress={() => setTrabajoSeleccionado(item)}
-                >
-                  <View style={{ alignItems: 'center' }}>
-                    <View
-                      style={{
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        backgroundColor: '#161b22',
-                        paddingHorizontal: 8,
-                        paddingVertical: 4,
-                        borderRadius: 12,
-                        borderWidth: 1.5,
-                        borderColor: isDestacado ? '#eab308' : colors.accentBlue,
-                        gap: 4,
-                      }}
-                    >
-                      {isDestacado && <Ionicons name="star" size={10} color="#eab308" />}
-                      <Text
-                        style={{
-                          fontSize: 12,
-                          fontWeight: '800',
-                          color: colors.accentGreen,
-                        }}
-                      >
-                        {item.monto}
-                      </Text>
-                    </View>
-                    <View
-                      style={{
-                        width: 0,
-                        height: 0,
-                        borderLeftWidth: 4,
-                        borderRightWidth: 4,
-                        borderTopWidth: 5,
-                        borderLeftColor: 'transparent',
-                        borderRightColor: 'transparent',
-                        borderTopColor: isDestacado ? '#eab308' : colors.accentBlue,
-                      }}
-                    />
-                  </View>
-                  <Callout
-                    tooltip
-                    onPress={() => setTrabajoSeleccionado(item)}
-                  >
-                    <View
-                      style={{
-                        backgroundColor: colors.surface,
-                        padding: 10,
-                        borderRadius: 12,
-                        width: 200,
-                        borderWidth: 1,
-                        borderColor: colors.border,
-                      }}
-                    >
-                      <Text
-                        style={{
-                          fontSize: 13,
-                          fontWeight: '700',
-                          color: colors.textPrimary,
-                          marginBottom: 4,
-                        }}
-                        numberOfLines={2}
-                      >
-                        {item.titulo}
-                      </Text>
-                      <Text
-                        style={{
-                          fontSize: 14,
-                          fontWeight: '800',
-                          color: colors.accentGreen,
-                        }}
-                      >
-                        {item.monto}
-                      </Text>
-                      <Text
-                        style={{
-                          fontSize: 11,
-                          color: colors.accentBlue,
-                          marginTop: 4,
-                          fontWeight: '600',
-                        }}
-                      >
-                        📍 {item.comuna} • Toca para ver detalle →
-                      </Text>
-                    </View>
-                  </Callout>
-                </Marker>
-              );
-            })}
-          </MapView>
-        </View>
       )}
-
-      {/* 3. BOTÓN FLOTANTE */}
-      <View style={[styles.floatingButtonContainer, { bottom: buttonBottom }]} pointerEvents="box-none">
-        <TouchableOpacity
-          activeOpacity={0.85}
-          style={styles.pluxeeButton}
-          onPress={() => setVista(vista === 'lista' ? 'mapa' : 'lista')}
-        >
-          <Ionicons
-            name={vista === 'lista' ? 'location-sharp' : 'reorder-three'}
-            size={18}
-            color="#ffffff"
-          />
-          <Text style={styles.pluxeeButtonText}>
-            {vista === 'lista' ? 'Mostrar en el mapa' : 'Volver al listado'}
-          </Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* 4. MODAL DETALLE DE LA TAREA */}
+            {/* MODAL_HOST_TRABAJOS: Un único Modal nativo; las ventanas se apilan como capas internas
+          para evitar que iOS congele la pantalla al abrir un modal sobre otro. */}
       <Modal
-        animationType="slide"
+        animationType="fade"
         transparent={true}
-        visible={trabajoSeleccionado !== null}
-        onRequestClose={() => setTrabajoSeleccionado(null)}
+        visible={hayCapaAbierta}
+        onRequestClose={cerrarCapaSuperior}
       >
+        <View style={{ flex: 1 }}>
+{/* 3. MODAL DETALLE DE LA TAREA */}
+      {(trabajoSeleccionado !== null) && (
+        <View style={CAPA_COMPLETA}>
         <Pressable style={styles.modalOverlay} onPress={() => setTrabajoSeleccionado(null)}>
           <Pressable style={styles.modalSheet} onPress={(e) => e.stopPropagation()}>
             {trabajoSeleccionado && (() => {
@@ -970,15 +869,12 @@ export default function TrabajosScreen() {
             })()}
           </Pressable>
         </Pressable>
-      </Modal>
+      </View>
+      )}
 
       {/* 5. MODAL DE EDICIÓN PARA EL CREADOR */}
-      <Modal
-        animationType="fade"
-        transparent={true}
-        visible={modalEditarVisible}
-        onRequestClose={() => setModalEditarVisible(false)}
-      >
+      {(modalEditarVisible) && (
+        <View style={CAPA_COMPLETA}>
         <Pressable style={styles.dropdownOverlay} onPress={() => setModalEditarVisible(false)}>
           <Pressable style={styles.dropdownModal} onPress={(e) => e.stopPropagation()}>
             <View style={styles.dropdownHeader}>
@@ -1042,15 +938,12 @@ export default function TrabajosScreen() {
             </ScrollView>
           </Pressable>
         </Pressable>
-      </Modal>
+      </View>
+      )}
 
       {/* 6. MODAL PERFIL DEL SOLICITANTE */}
-      <Modal
-        animationType="fade"
-        transparent={true}
-        visible={solicitanteModal !== null || cargandoSolicitante}
-        onRequestClose={() => setSolicitanteModal(null)}
-      >
+      {(solicitanteModal !== null || cargandoSolicitante) && (
+        <View style={CAPA_COMPLETA}>
         <Pressable style={styles.dropdownOverlay} onPress={() => setSolicitanteModal(null)}>
           <Pressable style={styles.solicitanteModalBox} onPress={(e) => e.stopPropagation()}>
             {cargandoSolicitante ? (
@@ -1118,15 +1011,12 @@ export default function TrabajosScreen() {
             )}
           </Pressable>
         </Pressable>
-      </Modal>
+      </View>
+      )}
 
       {/* 7. MODAL DE FILTROS DINÁMICOS */}
-      <Modal
-        animationType="slide"
-        transparent={true}
-        visible={modalFiltrosVisible}
-        onRequestClose={() => setModalFiltrosVisible(false)}
-      >
+      {(modalFiltrosVisible) && (
+        <View style={CAPA_COMPLETA}>
         <Pressable style={styles.modalOverlay} onPress={() => setModalFiltrosVisible(false)}>
           <Pressable style={styles.modalSheet} onPress={(e) => e.stopPropagation()}>
             <View style={styles.sheetHeader}>
@@ -1235,13 +1125,7 @@ export default function TrabajosScreen() {
             <View style={styles.sheetFooter}>
               <TouchableOpacity
                 style={styles.btnReset}
-                onPress={() => {
-                  setCategoriaSelId('todas');
-                  setComunaSelId('todas');
-                  setRadioDistanciaKm(null);
-                  setMontoMinimo(MONTO_MIN_BASE);
-                  setMontoMaximo(MONTO_MAX_BASE);
-                }}
+                onPress={limpiarFiltros}
               >
                 <Text style={styles.btnResetText}>Restablecer</Text>
               </TouchableOpacity>
@@ -1255,15 +1139,8 @@ export default function TrabajosScreen() {
             </View>
           </Pressable>
         </Pressable>
-      </Modal>
-
-      {/* 8. SELECTORES CATEGORÍA / COMUNA */}
-      <Modal
-        animationType="fade"
-        transparent={true}
-        visible={dropdownVisible !== 'ninguno'}
-        onRequestClose={() => setDropdownVisible('ninguno')}
-      >
+      {dropdownVisible !== 'ninguno' && (
+<View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}>
         <Pressable style={styles.dropdownOverlay} onPress={() => setDropdownVisible('ninguno')}>
           <Pressable style={styles.dropdownModal} onPress={(e) => e.stopPropagation()}>
             <View style={styles.dropdownHeader}>
@@ -1324,15 +1201,14 @@ export default function TrabajosScreen() {
             )}
           </Pressable>
         </Pressable>
-      </Modal>
+      </View>
+)}
+      </View>
+      )}
 
       {/* 9. MODAL DE ALERTA PERSONALIZADO */}
-      <Modal
-        animationType="fade"
-        transparent={true}
-        visible={alerta.visible}
-        onRequestClose={cerrarAlerta}
-      >
+      {(alerta.visible) && (
+        <View style={CAPA_COMPLETA}>
         <Pressable style={styles.dropdownOverlay} onPress={cerrarAlerta}>
           <Pressable style={styles.customAlertBox} onPress={(e) => e.stopPropagation()}>
             <View
@@ -1408,6 +1284,9 @@ export default function TrabajosScreen() {
             </View>
           </Pressable>
         </Pressable>
+      </View>
+      )}
+        </View>
       </Modal>
     </View>
   );

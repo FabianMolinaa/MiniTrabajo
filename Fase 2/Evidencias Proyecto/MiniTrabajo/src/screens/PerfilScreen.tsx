@@ -41,6 +41,8 @@ import {
   enviarCalificacionMutua,
 } from "../utils/functionsPerfil";
 
+const CAPA_COMPLETA = { position: "absolute" as const, top: 0, left: 0, right: 0, bottom: 0 };
+
 export interface CalificacionTarget {
   trabajoId: string;
   evaluadoId: string;
@@ -532,6 +534,30 @@ const handleGuardarPerfil = async () => {
 
   const publicacionesActivas = misPublicaciones.filter((p) => p.estado !== "completado");
   const publicacionesCompletadas = misPublicaciones.filter((p) => p.estado === "completado");
+  // Estado combinado de capas (ventanas) y cierre de la capa superior (botón atrás Android)
+  const hayCapaAbierta =
+    modalVisible !== "ninguno" ||
+    tareaOpciones !== null ||
+    modalEditarTareaVisible ||
+    tareaSeleccionada !== null ||
+    postulanteDetalle !== null ||
+    targetCalificar !== null ||
+    modalEditarVisible ||
+    modalComunasVisible ||
+    alerta.visible;
+
+  const cerrarCapaSuperior = () => {
+    if (alerta.visible) return cerrarAlerta();
+    if (modalComunasVisible) return setModalComunasVisible(false);
+    if (modalEditarVisible) return setModalEditarVisible(false);
+    if (targetCalificar !== null) return handleCerrarCalificar();
+    if (postulanteDetalle !== null) return setPostulanteDetalle(null);
+    if (tareaSeleccionada !== null) return setTareaSeleccionada(null);
+    if (modalEditarTareaVisible) return setModalEditarTareaVisible(false);
+    if (tareaOpciones !== null) return setTareaOpciones(null);
+    setModalVisible("ninguno");
+  };
+
 
   return (
     <View style={styles.screenWrapper}>
@@ -636,8 +662,18 @@ const handleGuardarPerfil = async () => {
         </TouchableOpacity>
       </ScrollView>
 
+      {/* MODAL_HOST_PERFIL: un único Modal nativo; las ventanas se apilan como capas internas
+          para evitar presentar un Modal sobre otro (causa bloqueos de toques en iOS). */}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={hayCapaAbierta}
+        onRequestClose={cerrarCapaSuperior}
+      >
+        <View style={{ flex: 1 }}>
       {/* MODAL 1: RESEÑAS */}
-      <Modal animationType="slide" transparent={true} visible={modalVisible === "resenas"} onRequestClose={() => setModalVisible("ninguno")}>
+      {(modalVisible === "resenas") && (
+        <View style={CAPA_COMPLETA}>
         <View style={styles.modalOverlay}>
           <TouchableOpacity
             style={styles.modalBackdropTouch}
@@ -685,10 +721,12 @@ const handleGuardarPerfil = async () => {
             </ScrollView>
           </View>
         </View>
-      </Modal>
+      </View>
+      )}
 
       {/* MODAL 2: HISTORIAL DE TRABAJOS HECHOS */}
-      <Modal animationType="slide" transparent={true} visible={modalVisible === "historial"} onRequestClose={() => setModalVisible("ninguno")}>
+      {(modalVisible === "historial") && (
+        <View style={CAPA_COMPLETA}>
         <View style={styles.modalOverlay}>
           <TouchableOpacity
             style={styles.modalBackdropTouch}
@@ -777,10 +815,12 @@ const handleGuardarPerfil = async () => {
             </ScrollView>
           </View>
         </View>
-      </Modal>
+      </View>
+      )}
 
       {/* MODAL 3: MIS PUBLICACIONES */}
-      <Modal animationType="slide" transparent={true} visible={modalVisible === "publicaciones"} onRequestClose={() => setModalVisible("ninguno")}>
+      {(modalVisible === "publicaciones") && (
+        <View style={CAPA_COMPLETA}>
         <View style={styles.modalOverlay}>
           <TouchableOpacity
             style={styles.modalBackdropTouch}
@@ -920,10 +960,12 @@ const handleGuardarPerfil = async () => {
             </ScrollView>
           </View>
         </View>
-      </Modal>
+      </View>
+      )}
 
       {/* MENÚ DE OPCIONES 3 PUNTOS: EDITAR / ELIMINAR */}
-      <Modal animationType="fade" transparent={true} visible={tareaOpciones !== null} onRequestClose={() => setTareaOpciones(null)}>
+      {(tareaOpciones !== null) && (
+        <View style={CAPA_COMPLETA}>
         <View style={styles.subModalOverlay}>
           <TouchableOpacity
             style={styles.subModalBackdropTouch}
@@ -953,10 +995,12 @@ const handleGuardarPerfil = async () => {
             </TouchableOpacity>
           </View>
         </View>
-      </Modal>
+      </View>
+      )}
 
       {/* MODAL DE EDICIÓN DE PUBLICACIÓN */}
-      <Modal animationType="fade" transparent={true} visible={modalEditarTareaVisible} onRequestClose={() => setModalEditarTareaVisible(false)}>
+      {(modalEditarTareaVisible) && (
+        <View style={CAPA_COMPLETA}>
         <View style={styles.subModalOverlay}>
           <TouchableOpacity
             style={styles.subModalBackdropTouch}
@@ -1025,10 +1069,12 @@ const handleGuardarPerfil = async () => {
             </ScrollView>
           </View>
         </View>
-      </Modal>
+      </View>
+      )}
 
       {/* SUB-MODAL: GESTIÓN DE POSTULANTES DE LA TAREA */}
-      <Modal animationType="fade" transparent={true} visible={tareaSeleccionada !== null} onRequestClose={() => setTareaSeleccionada(null)}>
+      {(tareaSeleccionada !== null) && (
+        <View style={CAPA_COMPLETA}>
         <View style={styles.subModalOverlay}>
           <TouchableOpacity
             style={styles.subModalBackdropTouch}
@@ -1191,10 +1237,12 @@ const handleGuardarPerfil = async () => {
             )}
           </View>
         </View>
-      </Modal>
+      </View>
+      )}
 
       {/* SUB-MODAL: PERFIL POSTULANTE */}
-      <Modal animationType="fade" transparent={true} visible={postulanteDetalle !== null} onRequestClose={() => setPostulanteDetalle(null)}>
+      {(postulanteDetalle !== null) && (
+        <View style={CAPA_COMPLETA}>
         <View style={styles.subModalOverlay}>
           <TouchableOpacity
             style={styles.subModalBackdropTouch}
@@ -1297,10 +1345,12 @@ const handleGuardarPerfil = async () => {
             )}
           </View>
         </View>
-      </Modal>
+      </View>
+      )}
 
       {/* SUB-MODAL: CALIFICACIÓN MUTUA */}
-      <Modal animationType="fade" transparent={true} visible={targetCalificar !== null} onRequestClose={handleCerrarCalificar}>
+      {(targetCalificar !== null) && (
+        <View style={CAPA_COMPLETA}>
         <View style={styles.subModalOverlay}>
           <TouchableOpacity
             style={styles.subModalBackdropTouch}
@@ -1381,10 +1431,12 @@ const handleGuardarPerfil = async () => {
             )}
           </View>
         </View>
-      </Modal>
+      </View>
+      )}
 
       {/* MODAL 4: EDICIÓN DE PERFIL */}
-      <Modal animationType="slide" transparent={true} visible={modalEditarVisible} onRequestClose={() => setModalEditarVisible(false)}>
+      {(modalEditarVisible) && (
+        <View style={CAPA_COMPLETA}>
         <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.modalOverlay}>
           <View style={styles.modalOverlay}>
             <TouchableOpacity
@@ -1445,10 +1497,12 @@ const handleGuardarPerfil = async () => {
             </View>
           </View>
         </KeyboardAvoidingView>
-      </Modal>
+      </View>
+      )}
 
       {/* SUB-MODAL COMUNAS */}
-      <Modal animationType="fade" transparent={true} visible={modalComunasVisible} onRequestClose={() => setModalComunasVisible(false)}>
+      {(modalComunasVisible) && (
+        <View style={CAPA_COMPLETA}>
         <View style={styles.subModalOverlay}>
           <TouchableOpacity
             style={styles.subModalBackdropTouch}
@@ -1481,10 +1535,12 @@ const handleGuardarPerfil = async () => {
             />
           </View>
         </View>
-      </Modal>
+      </View>
+      )}
 
       {/* MODAL 5: CRÉDITOS */}
-      <Modal animationType="slide" transparent={true} visible={modalVisible === "creditos"} onRequestClose={() => setModalVisible("ninguno")}>
+      {(modalVisible === "creditos") && (
+        <View style={CAPA_COMPLETA}>
         <View style={styles.modalOverlay}>
           <TouchableOpacity
             style={styles.modalBackdropTouch}
@@ -1529,15 +1585,12 @@ const handleGuardarPerfil = async () => {
             ))}
           </View>
         </View>
-      </Modal>
+      </View>
+      )}
 
       {/* MODAL DE ALERTA PERSONALIZADO (DARK THEME) */}
-      <Modal
-        animationType="fade"
-        transparent={true}
-        visible={alerta.visible}
-        onRequestClose={cerrarAlerta}
-      >
+      {(alerta.visible) && (
+        <View style={CAPA_COMPLETA}>
         <View style={styles.subModalOverlay}>
           <TouchableOpacity
             style={styles.subModalBackdropTouch}
@@ -1617,6 +1670,9 @@ const handleGuardarPerfil = async () => {
               </TouchableOpacity>
             </View>
           </View>
+        </View>
+      </View>
+      )}
         </View>
       </Modal>
     </View>

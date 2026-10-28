@@ -32,6 +32,7 @@ import TrabajosScreen from "./src/screens/TrabajosScreen";
 import MapaScreen from "./src/screens/MapaScreen";
 import PublicarScreen from "./src/screens/PublicarScreen";
 import PerfilScreen from "./src/screens/PerfilScreen";
+import { FiltrosProvider } from "./src/context/FiltrosContext";
 
 const Tab = createBottomTabNavigator();
 
@@ -350,9 +351,11 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <StatusBar style="light" />
-      <NavigationContainer theme={MyDarkTheme}>
+      <FiltrosProvider>
+        <NavigationContainer theme={MyDarkTheme}>
         {session && session.user ? <Navigation /> : <AuthScreen />}
-      </NavigationContainer>
+        </NavigationContainer>
+      </FiltrosProvider>
     </SafeAreaProvider>
   );
 }
