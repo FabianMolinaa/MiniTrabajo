@@ -326,16 +326,17 @@ export default function PublicarScreen() {
         return;
       }
 
-      if (destacarConCreditos) {
-        const nuevoSaldo = creditosDisponibles - COSTO_DESTACAR;
-        const { error: creditosError } = await supabase
-          .from('perfiles')
-          .update({ creditos: nuevoSaldo })
-          .eq('id', user.id);
+      const { data: saldoActual, error: saldoError } = await supabase
+        .from('perfiles')
+        .select('creditos')
+        .eq('id', user.id)
+        .single();
 
-        if (!creditosError) {
-          setCreditosDisponibles(nuevoSaldo);
-        }
+      if (saldoError) {
+        // La publicación ya se guardó; un error de lectura no la cancela.
+        console.warn('No se pudo refrescar el saldo:', saldoError.message);
+      } else if (saldoActual) {
+        setCreditosDisponibles(saldoActual.creditos);
       }
 
       setResumenExito({
