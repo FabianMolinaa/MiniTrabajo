@@ -1,4 +1,5 @@
 import React, { useState, useCallback } from "react";
+import PagoWebpay from "../components/PagoWebpay";
 import { useFocusEffect } from '@react-navigation/native';
 import {
   Text,
@@ -78,6 +79,10 @@ export default function PerfilScreen() {
   const [correo, setCorreo] = useState("");
   const [cargandoPerfil, setCargandoPerfil] = useState(true);
   const [refrescando, setRefrescando] = useState(false);
+
+  const [pagoVisible, setPagoVisible] = useState<{
+  paqueteId: string | null;
+} | null>(null);
 
   // Perfil
   const [perfil, setPerfil] = useState<PerfilData>({
@@ -534,7 +539,8 @@ const handleGuardarPerfil = async () => {
 
   const publicacionesActivas = misPublicaciones.filter((p) => p.estado !== "completado");
   const publicacionesCompletadas = misPublicaciones.filter((p) => p.estado === "completado");
-  // Estado combinado de capas (ventanas) y cierre de la capa superior (botón atrás Android)
+
+  // Estado combinado de capas (ventanas) y cierre de la capa superior (botón atrás Android)
   const hayCapaAbierta =
     modalVisible !== "ninguno" ||
     tareaOpciones !== null ||
@@ -558,7 +564,17 @@ const handleGuardarPerfil = async () => {
     setModalVisible("ninguno");
   };
 
-
+if (pagoVisible !== null) {
+  return (
+    <PagoWebpay
+      paqueteId={pagoVisible.paqueteId}
+      onCerrar={async () => {
+        setPagoVisible(null);
+        await cargarDatos();
+      }}
+    />
+  );
+}
   return (
     <View style={styles.screenWrapper}>
       <ScrollView
@@ -1562,15 +1578,31 @@ const handleGuardarPerfil = async () => {
               <Text style={styles.balanceNumber}>{perfil.creditos} créditos</Text>
               <Text style={styles.balanceSubtext}>Usa créditos para destacar tus ofertas en la comunidad.</Text>
             </View>
+
+            <TouchableOpacity
+              style={{ paddingVertical: 12 }}
+              onPress={() => {
+                setModalVisible("ninguno");
+                setPagoVisible({ paqueteId: null });
+              }}
+            >
+              <Text
+                style={{
+                  color: colors.accentBlue,
+                  textAlign: "center",
+                }}
+              >
+                Revisar último pago
+              </Text>
+            </TouchableOpacity>
             {PAQUETES_CREDITOS.map((pack) => (
               <TouchableOpacity
                 key={pack.id}
                 activeOpacity={0.8}
                 style={[styles.packageCard, pack.destacado && styles.packageCardPopular]}
                 onPress={() => {
-                  setPerfil((prev) => ({ ...prev, creditos: prev.creditos + pack.creditos }));
                   setModalVisible("ninguno");
-                  dispararAlerta("¡Compra simulada!", `Añadiste ${pack.creditos} créditos a tu saldo.`, "exito");
+                  setPagoVisible({ paqueteId: pack.id });
                 }}
               >
                 <View style={styles.packageInfo}>
