@@ -9,6 +9,7 @@ import React, {
 import {
   ActivityIndicator,
   BackHandler,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -17,6 +18,8 @@ import {
 
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
+
+import ResultadoCompra from './ResultadoCompra';
 
 import {
   crearORecuperarPago,
@@ -28,16 +31,19 @@ import {
 interface Props {
   paqueteId: string | null;
   onCerrar: () => void | Promise<void>;
+  onVerHistorial: () => void;
 }
 
 export default function PagoWebpay({
   paqueteId,
   onCerrar,
+  onVerHistorial,
 }: Props) {
   const [pago, setPago] = useState<DatosPago | null>(null);
   const [cargando, setCargando] = useState(true);
   const [verificando, setVerificando] = useState(false);
   const [mensaje, setMensaje] = useState<string | null>(null);
+  const [retornando, setRetornando] = useState(false);
 
   const ocupado = useRef(false);
   const montado = useRef(false);
@@ -116,6 +122,7 @@ export default function PagoWebpay({
     if (!pago || ocupado.current) return;
 
     ocupado.current = true;
+    setRetornando(true);
     setVerificando(true);
     setMensaje(null);
 
@@ -123,7 +130,7 @@ export default function PagoWebpay({
       const compra = await verificarPago(pago);
 
       if (montado.current) {
-        setPago((actual) =>
+        setPago(actual =>
           actual ? { ...actual, compra } : actual
         );
 
@@ -169,10 +176,6 @@ export default function PagoWebpay({
 
   const pendiente = pago?.compra.estado === 'pendiente';
 
-  const aprobado =
-    pago?.compra.estado === 'aprobado' &&
-    Boolean(pago.compra.acreditado_en);
-
   return (
     <SafeAreaView
       style={s.pantalla}
@@ -185,7 +188,7 @@ export default function PagoWebpay({
           onPress={() => void onCerrar()}
           style={s.boton}
         >
-          <Text style={s.botonTexto}>Volver al perfil</Text>
+          <Text style={s.botonTexto}>Mis créditos</Text>
         </TouchableOpacity>
       </View>
 
@@ -218,10 +221,10 @@ export default function PagoWebpay({
         </View>
       ) : pendiente && source && paqueteId !== null ? (
         <WebView
-          style={s.web}
+          style={retornando ? s.webOculta : s.web}
           source={source}
           originWhitelist={['https://*', 'about:blank']}
-          onShouldStartLoadWithRequest={(request) =>
+          onShouldStartLoadWithRequest={request =>
             request.url.startsWith('https://') ||
             request.url === 'about:blank'
           }
@@ -238,7 +241,12 @@ export default function PagoWebpay({
               color="#38bdf8"
             />
           )}
-          onLoadEnd={(event) => {
+          onLoadStart={event => {
+            if (esRetornoWebpay(event.nativeEvent.url)) {
+              setRetornando(true);
+            }
+          }}
+          onLoadEnd={event => {
             if (esRetornoWebpay(event.nativeEvent.url)) {
               void verificar();
             }
@@ -254,25 +262,7 @@ export default function PagoWebpay({
             )
           }
         />
-      ) : pago ? (
-        <View style={s.centro}>
-          <Text style={s.titulo}>
-            {aprobado
-              ? 'Pago aprobado'
-              : pendiente
-                ? 'Pago sin confirmación'
-                : 'Intento finalizado'}
-          </Text>
-
-          <Text style={s.texto}>
-            {aprobado
-              ? `Se acreditaron ${pago.compra.creditos} créditos. Vuelve al perfil para ver tu saldo.`
-              : pendiente
-                ? 'El pago sigue sin confirmación. Si ya pagaste, vuelve a verificar. Para comprar de nuevo, vuelve al perfil y elige un paquete.'
-                : `Estado: ${pago.compra.estado}. Este intento no acreditó créditos.`}
-          </Text>
-        </View>
-      ) : (
+      ) : pago ? null : (
         <View style={s.centro}>
           <TouchableOpacity
             style={s.botonPrincipal}
@@ -284,6 +274,44 @@ export default function PagoWebpay({
           </TouchableOpacity>
         </View>
       )}
+
+      {!cargando &&
+        pago &&
+        (!pendiente ||
+          !source ||
+          paqueteId === null ||
+          retornando) && (
+          <ScrollView contentContainerStyle={s.resultado}>
+            {verificando && (
+              <ActivityIndicator
+                color="#38bdf8"
+                accessibilityLabel="Verificando compra"
+              />
+            )}
+
+            <ResultadoCompra compra={pago.compra} />
+
+            <TouchableOpacity
+              accessibilityRole="button"
+              style={s.botonPrincipal}
+              onPress={() => void onCerrar()}
+            >
+              <Text style={s.botonTexto}>
+                Volver a mis créditos
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              accessibilityRole="button"
+              style={s.boton}
+              onPress={onVerHistorial}
+            >
+              <Text style={s.botonTexto}>
+                Ver historial de compras
+              </Text>
+            </TouchableOpacity>
+          </ScrollView>
+        )}
 
       {!cargando && pendiente && pago?.token && (
         <TouchableOpacity
@@ -354,6 +382,17 @@ const s = StyleSheet.create({
     color: '#fff',
     fontWeight: '600',
     textAlign: 'center',
+  },
+  resultado: {
+    padding: 20,
+    gap: 16,
+    flexGrow: 1,
+    justifyContent: 'center',
+  },
+  webOculta: {
+    height: 0,
+    flex: 0,
+    opacity: 0,
   },
   web: {
     flex: 1,

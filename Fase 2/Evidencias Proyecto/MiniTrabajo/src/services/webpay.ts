@@ -14,6 +14,7 @@ export interface CompraCreditos {
   creditos: number;
   estado: string;
   acreditado_en: string | null;
+  created_at?: string;
 }
 
 export interface PagoWebpay {
@@ -105,6 +106,37 @@ export async function consultarCompra(
   }
 
   return data as CompraCreditos;
+}
+// AGREGA AQUÍ la nueva función:
+export async function consultarHistorialCompras(
+  pagina = 0
+): Promise<CompraCreditos[]> {
+  const sesion = await sesionActual();
+
+  const { data, error } = await supabase
+    .from('compras_creditos')
+    .select(
+      'id, paquete_id, monto_clp, creditos, estado, acreditado_en'
+    )
+    .eq('usuario_id', sesion.user.id)
+    .eq('estado', 'aprobado')
+    .not('acreditado_en', 'is', null)
+    .order('acreditado_en', { ascending: false })
+    .order('id', { ascending: false })
+    .range(pagina * 20, pagina * 20 + 19);
+
+  if (error) {
+    console.warn('Error al consultar historial de compras:', {
+      code: error.code,
+      message: error.message,
+    });
+
+    throw new Error(
+      'No pudimos cargar tu historial. Desliza hacia abajo para actualizar.'
+    );
+  }
+
+  return (data ?? []) as CompraCreditos[];
 }
 
 export async function crearORecuperarPago(
