@@ -317,58 +317,53 @@ export default function PerfilScreen() {
   };
 
   const handleRechazar = async (postulacionId: string) => {
-  try {
-    const { error } = await supabase.rpc(
-      'rechazar_postulacion',
-      {
+    try {
+      const { error } = await supabase.rpc("rechazar_postulacion", {
         p_postulacion_id: postulacionId,
-      }
-    );
-
-    if (error) {
-      console.warn('Error al rechazar postulación:', {
-        code: error.code,
-        message: error.message,
       });
 
-      if (error.code === '42501') {
+      if (error) {
+        console.warn("Error al rechazar postulación:", {
+          code: error.code,
+          message: error.message,
+        });
+
+        if (error.code === "42501") {
+          throw new Error(
+            "No tienes autorización para rechazar esta postulación.",
+          );
+        }
+
+        if (error.code === "55000") {
+          throw new Error(
+            "La postulación cambió o ya no permite el rechazo. Actualiza la tarea. Si el trabajador está aceptado, utiliza Cancelar acuerdo.",
+          );
+        }
+
         throw new Error(
-          'No tienes autorización para rechazar esta postulación.'
+          "No pudimos rechazar la postulación. Actualiza la tarea antes de volver a intentarlo.",
         );
       }
 
-      if (error.code === '55000') {
-        throw new Error(
-          'La postulación cambió o ya no permite el rechazo. Actualiza la tarea. Si el trabajador está aceptado, utiliza Cancelar acuerdo.'
-        );
-      }
+      setPostulantesDeTarea((prev) =>
+        prev.map((p) =>
+          p.id === postulacionId ? { ...p, estado: "rechazado" } : p,
+        ),
+      );
 
-      throw new Error(
-        'No pudimos rechazar la postulación. Actualiza la tarea antes de volver a intentarlo.'
+      if (postulanteDetalle?.id === postulacionId) {
+        setPostulanteDetalle(null);
+      }
+    } catch (error: unknown) {
+      dispararAlerta(
+        "Error al rechazar",
+        error instanceof Error
+          ? error.message
+          : "No se pudo rechazar la postulación.",
+        "error",
       );
     }
-
-    setPostulantesDeTarea(prev =>
-      prev.map(p =>
-        p.id === postulacionId
-          ? { ...p, estado: 'rechazado' }
-          : p
-      )
-    );
-
-    if (postulanteDetalle?.id === postulacionId) {
-      setPostulanteDetalle(null);
-    }
-  } catch (error: unknown) {
-    dispararAlerta(
-      'Error al rechazar',
-      error instanceof Error
-        ? error.message
-        : 'No se pudo rechazar la postulación.',
-      'error'
-    );
-  }
-};
+  };
 
   const handleCancelarAcuerdo = () => {
     if (!tareaSeleccionada) return;
@@ -628,9 +623,10 @@ export default function PerfilScreen() {
   const subirAvatarStorage = async (
     base64Data: string,
     uid: string,
-  ): Promise<string | null> => {
+  ): Promise<string> => {
     try {
       const fileName = `${uid}-${Date.now()}.jpg`;
+
       const { error: uploadError } = await supabase.storage
         .from("avatars")
         .upload(fileName, decode(base64Data), {
@@ -638,12 +634,20 @@ export default function PerfilScreen() {
           upsert: true,
         });
 
-      if (uploadError) return null;
+      if (uploadError) throw uploadError;
 
       const { data } = supabase.storage.from("avatars").getPublicUrl(fileName);
+
       return data.publicUrl;
-    } catch {
-      return null;
+    } catch (error: unknown) {
+      console.warn(
+        "Error al subir foto de perfil:",
+        error instanceof Error ? error.message : "Error de almacenamiento",
+      );
+
+      throw new Error(
+        "No pudimos subir tu foto de perfil. Prueba con otra imagen o una de menor tamaño.",
+      );
     }
   };
 
