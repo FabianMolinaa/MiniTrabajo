@@ -318,7 +318,7 @@ export default function MapaScreen() {
     // 2. Excluir tareas asignadas, excepto para el trabajador aceptado o el rechazado que consulta
     const estaEnCurso =
       t.tieneAceptado ||
-      String(t.estadoPublicacionOriginal || '').toLowerCase() === 'en_progreso';
+      String(t.estadoPublicacionOriginal || '').toLowerCase() === 'aceptado';
 
     if (estaEnCurso && t.estado !== 'aceptado' && t.estado !== 'rechazado') {
       return false;

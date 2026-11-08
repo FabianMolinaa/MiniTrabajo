@@ -1,6 +1,11 @@
-import { supabase } from '../services/supabase';
+import { supabase } from "../services/supabase";
 
-export type EstadoTrabajo = 'disponible' | 'postulado' | 'aceptado' | 'completado' | 'rechazado';
+export type EstadoTrabajo =
+  | "disponible"
+  | "postulado"
+  | "aceptado"
+  | "completado"
+  | "rechazado";
 
 export interface TrabajoUI {
   id: string;
@@ -15,7 +20,6 @@ export interface TrabajoUI {
   solicitante: string;
   solicitanteId: string;
   avatarUrl?: string;
-  telefono?: string;
   destacado: boolean;
   estado: EstadoTrabajo;
   estadoPublicacionOriginal?: string;
@@ -62,7 +66,7 @@ export const calcularDistanciaKm = (
   lat1: number,
   lon1: number,
   lat2: number,
-  lon2: number
+  lon2: number,
 ): number => {
   const R = 6371;
   const dLat = ((lat2 - lat1) * Math.PI) / 180;
@@ -78,34 +82,41 @@ export const calcularDistanciaKm = (
 };
 
 export const formatearDistancia = (km: number | null | undefined): string => {
-  if (km === null || km === undefined) return 'Ubicación comunal';
+  if (km === null || km === undefined) return "Ubicación comunal";
   if (km < 1) return `A ${Math.round(km * 1000)} m`;
   return `A ${km.toFixed(1)} km`;
 };
 
 export const formatearMonedaCLP = (monto: number): string => {
-  return `$${monto.toLocaleString('es-CL')}`;
+  return `$${monto.toLocaleString("es-CL")}`;
 };
 
 export const fetchCategoriasFiltro = async (): Promise<CategoriaFiltro[]> => {
-  const { data } = await supabase.from('categorias').select('id, nombre, icono').order('id');
+  const { data } = await supabase
+    .from("categorias")
+    .select("id, nombre, icono")
+    .order("id");
   return data || [];
 };
 
 export const fetchComunasFiltro = async (): Promise<ComunaFiltro[]> => {
-  const { data } = await supabase.from('comunas').select('id, nombre').order('nombre');
+  const { data } = await supabase
+    .from("comunas")
+    .select("id, nombre")
+    .order("nombre");
   return data || [];
 };
 
 export const fetchTrabajosMuro = async (
   usuarioId: string | null,
-  coordsUsuario?: { latitude: number; longitude: number } | null
+  coordsUsuario?: { latitude: number; longitude: number } | null,
 ): Promise<TrabajoUI[]> => {
   let trabajosData: any[] = [];
 
   const { data: dataJoin, error: errorJoin } = await supabase
-    .from('trabajos')
-    .select(`
+    .from("trabajos")
+    .select(
+      `
       id,
       user_id,
       titulo,
@@ -121,25 +132,26 @@ export const fetchTrabajosMuro = async (
       comuna_id,
       categorias ( id, nombre ),
       comunas ( id, nombre )
-    `)
-    .neq('estado', 'completado')
-    .order('destacado', { ascending: false })
-    .order('created_at', { ascending: false });
+    `,
+    )
+    .neq("estado", "completado")
+    .order("destacado", { ascending: false })
+    .order("created_at", { ascending: false });
 
   if (errorJoin) {
     const { data: dataSimple } = await supabase
-      .from('trabajos')
-      .select('*')
-      .neq('estado', 'completado')
-      .order('destacado', { ascending: false })
-      .order('created_at', { ascending: false });
+      .from("trabajos")
+      .select("*")
+      .neq("estado", "completado")
+      .order("destacado", { ascending: false })
+      .order("created_at", { ascending: false });
     trabajosData = dataSimple || [];
   } else {
     trabajosData = dataJoin || [];
   }
 
   trabajosData = trabajosData.filter(
-    (t) => String(t.estado || '').toLowerCase() !== 'completado'
+    (t) => String(t.estado || "").toLowerCase() !== "completado",
   );
 
   const trabajoIds = trabajosData.map((t) => t.id);
@@ -147,38 +159,45 @@ export const fetchTrabajosMuro = async (
 
   if (trabajoIds.length > 0) {
     const { data: postulacionesData } = await supabase
-      .from('postulaciones')
-      .select('trabajo_id, estado')
-      .in('trabajo_id', trabajoIds)
-      .eq('estado', 'aceptado');
+      .from("postulaciones")
+      .select("trabajo_id, estado")
+      .in("trabajo_id", trabajoIds)
+      .eq("estado", "aceptado");
 
     if (postulacionesData) {
       postulacionesData.forEach((p) => trabajosConAceptado.add(p.trabajo_id));
     }
   }
 
-  const userIds = Array.from(new Set(trabajosData.map((t) => t.user_id).filter(Boolean)));
+  const userIds = Array.from(
+    new Set(trabajosData.map((t) => t.user_id).filter(Boolean)),
+  );
   const perfilesMap: Record<string, any> = {};
 
   if (userIds.length > 0) {
-    const { data: perfilesData } = await supabase
-      .from('perfiles')
-      .select('id, nombre_completo, avatar_url, telefono')
-      .in('id', userIds);
+    const { data: perfilesData, error: errorPerfiles } = await supabase
+      .from("perfiles_publicos")
+      .select("id, nombre, nombre_completo, avatar_url")
+      .in("id", userIds);
 
-    if (perfilesData) {
-      perfilesData.forEach((p) => {
-        perfilesMap[p.id] = p;
+    if (errorPerfiles) {
+      console.warn("Error al consultar perfiles públicos:", {
+        code: errorPerfiles.code,
+        message: errorPerfiles.message,
       });
+
+      throw new Error(
+        "No se pudieron cargar los perfiles de los publicadores.",
+      );
     }
   }
 
   let misPostulaciones: Record<string, { id: string; estado: string }> = {};
   if (usuarioId) {
     const { data: postData } = await supabase
-      .from('postulaciones')
-      .select('id, trabajo_id, estado')
-      .eq('postulante_id', usuarioId);
+      .from("postulaciones")
+      .select("id, trabajo_id, estado")
+      .eq("postulante_id", usuarioId);
 
     if (postData) {
       postData.forEach((p: any) => {
@@ -199,47 +218,48 @@ export const fetchTrabajosMuro = async (
         coordsUsuario.latitude,
         coordsUsuario.longitude,
         Number(latFinal),
-        Number(lngFinal)
+        Number(lngFinal),
       );
     }
 
     const postulacion = misPostulaciones[t.id];
-    let estadoFinal: EstadoTrabajo = 'disponible';
+    let estadoFinal: EstadoTrabajo = "disponible";
     if (postulacion) {
-      if (postulacion.estado === 'aceptado') {
-        estadoFinal = 'aceptado';
-      } else if (postulacion.estado === 'rechazado') {
-        estadoFinal = 'rechazado';
+      if (postulacion.estado === "aceptado") {
+        estadoFinal = "aceptado";
+      } else if (postulacion.estado === "rechazado") {
+        estadoFinal = "rechazado";
       } else {
-        estadoFinal = 'postulado';
+        estadoFinal = "postulado";
       }
     }
 
     const estaAceptado =
       trabajosConAceptado.has(t.id) ||
-      String(t.estado || '').toLowerCase() === 'en_progreso';
+      String(t.estado || "").toLowerCase() === "aceptado";
 
     return {
       id: String(t.id),
-      titulo: t.titulo || 'Sin título',
-      descripcion: t.descripcion || '',
+      titulo: t.titulo || "Sin título",
+      descripcion: t.descripcion || "",
       monto: formatearMonedaCLP(Number(t.monto) || 0),
       montoRaw: Number(t.monto) || 0,
-      categoria: t.categorias?.nombre || 'General',
+      categoria: t.categorias?.nombre || "General",
       categoriaId: t.categoria_id || t.categorias?.id || 0,
-      comuna: t.comunas?.nombre || 'Santiago',
+      comuna: t.comunas?.nombre || "Santiago",
       comunaId: t.comuna_id || t.comunas?.id || 0,
-      solicitante: perfil.nombre_completo || 'Usuario',
-      solicitanteId: t.user_id || '',
+      solicitante: perfil.nombre_completo || "Usuario",
+      solicitanteId: t.user_id || "",
       avatarUrl: perfil.avatar_url,
-      telefono: perfil.telefono,
       destacado: Boolean(t.destacado),
       estado: estadoFinal,
-      estadoPublicacionOriginal: t.estado || 'disponible',
+      estadoPublicacionOriginal: t.estado || "disponible",
       tieneAceptado: estaAceptado,
       miPostulacionId: postulacion?.id,
       imagenes: Array.isArray(t.imagenes) ? t.imagenes : [],
-      fechaPublicacion: t.created_at ? new Date(t.created_at).toLocaleDateString('es-CL') : 'Hoy',
+      fechaPublicacion: t.created_at
+        ? new Date(t.created_at).toLocaleDateString("es-CL")
+        : "Hoy",
       totalPostulantes: 0,
       latitud: latFinal,
       longitud: lngFinal,
@@ -250,159 +270,243 @@ export const fetchTrabajosMuro = async (
   });
 };
 
-export const fetchDetalleSolicitante = async (solicitanteId: string): Promise<SolicitanteDetalle | null> => {
+export const fetchDetalleSolicitante = async (
+  solicitanteId: string
+): Promise<SolicitanteDetalle | null> => {
   try {
     const { data: perfil, error } = await supabase
-      .from('perfiles')
-      .select('id, nombre_completo, avatar_url, comuna, sobre_mi, calificacion, total_resenas')
+      .from('perfiles_publicos')
+      .select(`
+        id,
+        nombre,
+        nombre_completo,
+        avatar_url,
+        sobre_mi,
+        calificacion,
+        total_resenas,
+        comunas(nombre)
+      `)
       .eq('id', solicitanteId)
       .single();
 
-    if (error || !perfil) {
-      const { data: perfilFallback } = await supabase
-        .from('perfiles')
-        .select('*')
-        .eq('id', solicitanteId)
-        .single();
-
-      if (!perfilFallback) return null;
-
-      return {
-        id: perfilFallback.id,
-        nombre: perfilFallback.nombre_completo || perfilFallback.nombre || 'Usuario',
-        avatarUrl: perfilFallback.avatar_url,
-        comuna: perfilFallback.comuna || 'Santiago',
-        sobreMi: perfilFallback.sobre_mi || 'Sin descripción disponible.',
-        calificacion: Number(perfilFallback.calificacion) || 5,
-        totalResenas: Number(perfilFallback.total_resenas) || 0,
-        resenas: [],
-      };
+    if (error) {
+      console.warn('Error al consultar perfil del publicador:', {
+        code: error.code,
+        message: error.message,
+      });
+      return null;
     }
 
-    const { data: resenasData } = await supabase
+    if (!perfil) return null;
+
+    const {
+      data: resenasData,
+      error: errorResenas,
+    } = await supabase
       .from('resenas')
       .select(`
         id,
         calificacion,
         comentario,
         created_at,
-        perfiles:autor_id ( nombre, nombre_completo )
+        perfiles:perfiles_publicos!resenas_autor_id_fkey (
+          nombre,
+          nombre_completo
+        )
       `)
-      .or(`usuario_evaluado_id.eq.${solicitanteId},evaluado_id.eq.${solicitanteId}`)
+      .or(
+        `usuario_evaluado_id.eq.${solicitanteId},evaluado_id.eq.${solicitanteId}`
+      )
       .order('created_at', { ascending: false })
       .limit(10);
 
-    const resenasMapeadas = (resenasData || []).map((r: any) => ({
-      id: String(r.id),
-      autor: r.perfiles?.nombre || r.perfiles?.nombre_completo || 'Usuario',
-      calificacion: Number(r.calificacion) || 5,
-      comentario: r.comentario || '',
-    }));
+    if (errorResenas) {
+      console.warn('Error al consultar reseñas del publicador:', {
+        code: errorResenas.code,
+        message: errorResenas.message,
+      });
+      return null;
+    }
+
+    const resenasMapeadas = (resenasData || []).map((r: any) => {
+      const autor = Array.isArray(r.perfiles)
+        ? r.perfiles[0]
+        : r.perfiles;
+
+      return {
+        id: String(r.id),
+        autor: autor?.nombre || autor?.nombre_completo || 'Usuario',
+        calificacion: Number(r.calificacion) || 5,
+        comentario: r.comentario || '',
+      };
+    });
+
+    const comuna = Array.isArray(perfil.comunas)
+      ? perfil.comunas[0]
+      : perfil.comunas;
 
     return {
       id: perfil.id,
-      nombre: perfil.nombre_completo || 'Usuario',
+      nombre: perfil.nombre || perfil.nombre_completo || 'Usuario',
       avatarUrl: perfil.avatar_url,
-      comuna: perfil.comuna || 'Santiago',
+      comuna: comuna?.nombre || 'Sin comuna',
       sobreMi: perfil.sobre_mi || 'Sin descripción disponible.',
-      calificacion: Number(perfil.calificacion) || 5,
-      totalResenas: Number(perfil.total_resenas) || resenasMapeadas.length,
+      calificacion: Number(perfil.calificacion) || 0,
+      totalResenas:
+        Number(perfil.total_resenas) || resenasMapeadas.length,
       resenas: resenasMapeadas,
     };
-  } catch {
+  } catch (error) {
+    console.error('Error al cargar detalle del publicador:', error);
     return null;
   }
 };
 
-export const postularATrabajo = async (trabajoId: string, postulanteId: string) => {
+export const postularATrabajo = async (
+  trabajoId: string,
+  postulanteId: string,
+) => {
   // Comprobación de integridad: verificar si el trabajo ya fue tomado o cerrado
   const { data: trabajo } = await supabase
-    .from('trabajos')
-    .select('estado')
-    .eq('id', trabajoId)
+    .from("trabajos")
+    .select("estado")
+    .eq("id", trabajoId)
     .single();
 
   if (
     trabajo &&
-    (trabajo.estado === 'en_progreso' || trabajo.estado === 'completado')
+    (trabajo.estado === "aceptado" || trabajo.estado === "completado")
   ) {
-    throw new Error('Esta tarea ya fue asignada y no acepta nuevas postulaciones.');
+    throw new Error(
+      "Esta tarea ya fue asignada y no acepta nuevas postulaciones.",
+    );
   }
 
   const { data: postulacionAceptada } = await supabase
-    .from('postulaciones')
-    .select('id')
-    .eq('trabajo_id', trabajoId)
-    .eq('estado', 'aceptado');
+    .from("postulaciones")
+    .select("id")
+    .eq("trabajo_id", trabajoId)
+    .eq("estado", "aceptado");
 
   if (postulacionAceptada && postulacionAceptada.length > 0) {
-    throw new Error('Esta tarea ya cuenta con un trabajador seleccionado.');
+    throw new Error("Esta tarea ya cuenta con un trabajador seleccionado.");
   }
 
   return await supabase
-    .from('postulaciones')
+    .from("postulaciones")
     .insert({
       trabajo_id: trabajoId,
       postulante_id: postulanteId,
-      mensaje: 'Me postulo para realizar este trabajo.',
-      estado: 'pendiente',
+      mensaje: "Me postulo para realizar este trabajo.",
+      estado: "pendiente",
     })
-    .select('id')
+    .select("id")
     .single();
 };
 
-export const retirarPostulacion = async (trabajoId: string, postulanteId: string) => {
-  return await supabase
-    .from('postulaciones')
-    .delete()
-    .eq('trabajo_id', trabajoId)
-    .eq('postulante_id', postulanteId);
-};
+export const retirarPostulacion = async (
+  trabajoId: string,
+  _postulanteId?: string
+) => {
+  const { error } = await supabase.rpc(
+    'retirar_postulacion',
+    {
+      p_trabajo_id: trabajoId,
+    }
+  );
 
-export const eliminarTrabajoPropio = async (trabajoId: string) => {
-  const { data: aceptadas } = await supabase
-    .from('postulaciones')
-    .select('id')
-    .eq('trabajo_id', trabajoId)
-    .eq('estado', 'aceptado');
+  if (error) {
+    console.warn('Error al retirar postulación:', {
+      code: error.code,
+      message: error.message,
+    });
 
-  if (aceptadas && aceptadas.length > 0) {
-    throw new Error('No puedes eliminar una tarea que ya cuenta con un trabajador aceptado.');
+    if (error.code === '42501') {
+      throw new Error(
+        'Debes iniciar sesión para retirar tu postulación.'
+      );
+    }
+
+    if (error.code === '55000') {
+      throw new Error(
+        'No puedes retirar esta postulación. Si ya estás asignado, comunícate con el publicador para cancelar el acuerdo.'
+      );
+    }
+
+    throw new Error(
+      'No pudimos retirar la postulación. Actualiza la tarea y comprueba su estado.'
+    );
   }
 
-  await supabase.from('postulaciones').delete().eq('trabajo_id', trabajoId);
-  const { error } = await supabase.from('trabajos').delete().eq('id', trabajoId);
-  if (error) throw error;
+  // Mantener la respuesta que espera TrabajosScreen.
+  return { error: null };
+};
+
+export const eliminarTrabajoPropio = async (
+  trabajoId: string
+) => {
+  const { error } = await supabase.rpc(
+    'eliminar_trabajo',
+    {
+      p_trabajo_id: trabajoId,
+    }
+  );
+
+  if (error) {
+    console.warn('Error al eliminar trabajo:', {
+      code: error.code,
+      message: error.message,
+    });
+
+    if (error.code === '42501') {
+      throw new Error(
+        'No tienes autorización para eliminar este trabajo o ya no existe.'
+      );
+    }
+
+    if (error.code === '55000') {
+      throw new Error(
+        'Solo puedes eliminar trabajos disponibles, sin acuerdos activos ni reseñas. Actualiza la publicación antes de continuar.'
+      );
+    }
+
+    throw new Error(
+      'No pudimos eliminar el trabajo. Actualiza la lista y comprueba si todavía aparece.'
+    );
+  }
+
   return { error: null };
 };
 
 export const editarTrabajoPropio = async (
   trabajoId: string,
-  datos: { titulo: string; descripcion: string; monto: number }
+  datos: { titulo: string; descripcion: string; monto: number },
 ) => {
   const { data: aceptadas } = await supabase
-    .from('postulaciones')
-    .select('id')
-    .eq('trabajo_id', trabajoId)
-    .eq('estado', 'aceptado');
+    .from("postulaciones")
+    .select("id")
+    .eq("trabajo_id", trabajoId)
+    .eq("estado", "aceptado");
 
   if (aceptadas && aceptadas.length > 0) {
-    throw new Error('La tarea ya fue asignada a un trabajador y no puede ser modificada.');
+    throw new Error(
+      "La tarea ya fue asignada a un trabajador y no puede ser modificada.",
+    );
   }
 
   const { data, error } = await supabase
-    .from('trabajos')
+    .from("trabajos")
     .update({
       titulo: datos.titulo.trim(),
       descripcion: datos.descripcion.trim(),
       monto: datos.monto,
     })
-    .eq('id', trabajoId)
+    .eq("id", trabajoId)
     .select();
 
   if (error) throw error;
   if (!data || data.length === 0) {
-    throw new Error('No se pudo guardar la edición.');
+    throw new Error("No se pudo guardar la edición.");
   }
 
   return { data, error: null };

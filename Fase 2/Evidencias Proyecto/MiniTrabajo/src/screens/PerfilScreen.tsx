@@ -1,5 +1,6 @@
 import React, { useState, useCallback } from "react";
 import PagoWebpay from "../components/PagoWebpay";
+import { abrirWhatsAppTrabajo } from "../services/contactos";
 import HistorialCompras from "../components/HistorialCompras";
 import { useFocusEffect } from "@react-navigation/native";
 import {
@@ -15,7 +16,6 @@ import {
   KeyboardAvoidingView,
   Platform,
   FlatList,
-  Linking,
   RefreshControl,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
@@ -316,26 +316,59 @@ export default function PerfilScreen() {
     }
   };
 
-  const handleRechazar = async (postulanteId: string) => {
-    try {
-      await supabase
-        .from("postulaciones")
-        .update({ estado: "rechazado" })
-        .eq("id", postulanteId);
-      setPostulantesDeTarea((prev) =>
-        prev.map((p) =>
-          p.id === postulanteId ? { ...p, estado: "rechazado" } : p,
-        ),
-      );
-      if (postulanteDetalle?.id === postulanteId) setPostulanteDetalle(null);
-    } catch (err: any) {
-      dispararAlerta(
-        "Error",
-        err.message || "No se pudo rechazar al postulante.",
-        "error",
+  const handleRechazar = async (postulacionId: string) => {
+  try {
+    const { error } = await supabase.rpc(
+      'rechazar_postulacion',
+      {
+        p_postulacion_id: postulacionId,
+      }
+    );
+
+    if (error) {
+      console.warn('Error al rechazar postulación:', {
+        code: error.code,
+        message: error.message,
+      });
+
+      if (error.code === '42501') {
+        throw new Error(
+          'No tienes autorización para rechazar esta postulación.'
+        );
+      }
+
+      if (error.code === '55000') {
+        throw new Error(
+          'La postulación cambió o ya no permite el rechazo. Actualiza la tarea. Si el trabajador está aceptado, utiliza Cancelar acuerdo.'
+        );
+      }
+
+      throw new Error(
+        'No pudimos rechazar la postulación. Actualiza la tarea antes de volver a intentarlo.'
       );
     }
-  };
+
+    setPostulantesDeTarea(prev =>
+      prev.map(p =>
+        p.id === postulacionId
+          ? { ...p, estado: 'rechazado' }
+          : p
+      )
+    );
+
+    if (postulanteDetalle?.id === postulacionId) {
+      setPostulanteDetalle(null);
+    }
+  } catch (error: unknown) {
+    dispararAlerta(
+      'Error al rechazar',
+      error instanceof Error
+        ? error.message
+        : 'No se pudo rechazar la postulación.',
+      'error'
+    );
+  }
+};
 
   const handleCancelarAcuerdo = () => {
     if (!tareaSeleccionada) return;
@@ -661,19 +694,22 @@ export default function PerfilScreen() {
     }
   };
 
-  const handleAbrirWhatsApp = (telefono: string, tituloTarea: string) => {
-    if (!telefono) {
-      dispararAlerta(
-        "Sin teléfono",
-        "Este usuario no tiene un número registrado.",
-        "info",
+  const handleAbrirWhatsApp = async (
+    trabajoId: string,
+    tituloTarea: string,
+  ) => {
+    try {
+      await abrirWhatsAppTrabajo(
+        trabajoId,
+        `¡Hola! Te contacto por tu postulación a "${tituloTarea}".`,
       );
-      return;
+    } catch (error: unknown) {
+      dispararAlerta(
+        "No se pudo abrir el contacto",
+        error instanceof Error ? error.message : "Inténtalo nuevamente.",
+        "error",
+      );
     }
-    const cleanTel = telefono.replace(/[^0-9]/g, "");
-    Linking.openURL(
-      `https://wa.me/${cleanTel}?text=${encodeURIComponent(`¡Hola! Te contacto por tu postulación a "${tituloTarea}".`)}`,
-    );
   };
 
   const publicacionesActivas = misPublicaciones.filter(
@@ -1842,7 +1878,7 @@ export default function PerfilScreen() {
                                       activeOpacity={0.85}
                                       onPress={() =>
                                         handleAbrirWhatsApp(
-                                          post.telefono,
+                                          tareaSeleccionada.id,
                                           tareaSeleccionada.titulo,
                                         )
                                       }

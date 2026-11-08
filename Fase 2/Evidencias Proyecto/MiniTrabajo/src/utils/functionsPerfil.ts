@@ -34,7 +34,6 @@ export interface PostulanteBD {
   sobre_mi: string;
   calificacion: string;
   trabajos_realizados: number;
-  telefono: string;
   mensaje: string;
   estado: 'pendiente' | 'aceptado' | 'rechazado';
 }
@@ -147,7 +146,7 @@ export const fetchPublicacionesUsuario = async (userId: string): Promise<MiPubli
   const perfilesTrabajadores: Record<string, any> = {};
   if (trabajadorIds.length > 0) {
     const { data: perfilesData } = await supabase
-      .from('perfiles')
+      .from('perfiles_publicos')
       .select('id, nombre, nombre_completo, avatar_url')
       .in('id', trabajadorIds);
 
@@ -182,7 +181,7 @@ export const fetchPublicacionesUsuario = async (userId: string): Promise<MiPubli
     let trabajadorId = t.trabajador_id || postAceptada?.postulante_id || null;
 
     if (t.estado !== 'completado') {
-      estadoCalculado = postAceptada || t.estado === 'en_progreso' ? 'aceptado' : 'disponible';
+      estadoCalculado = postAceptada || t.estado === 'aceptado' ? 'aceptado' : 'disponible';
     }
 
     const perfTrabajador = trabajadorId ? perfilesTrabajadores[trabajadorId] : null;
@@ -208,7 +207,9 @@ export const fetchPublicacionesUsuario = async (userId: string): Promise<MiPubli
   });
 };
 
-export const fetchPostulantesDeTarea = async (trabajoId: string): Promise<PostulanteBD[]> => {
+export const fetchPostulantesDeTarea = async (
+  trabajoId: string
+): Promise<PostulanteBD[]> => {
   try {
     const { data: posts, error } = await supabase
       .from('postulaciones')
@@ -216,34 +217,66 @@ export const fetchPostulantesDeTarea = async (trabajoId: string): Promise<Postul
       .eq('trabajo_id', trabajoId)
       .order('created_at', { ascending: false });
 
-    if (error || !posts || posts.length === 0) return [];
+    if (error) throw error;
 
-    const postulantesIds = Array.from(new Set(posts.map((p) => p.postulante_id)));
+    if (!posts || posts.length === 0) return [];
 
-    const { data: perfilesData } = await supabase
-      .from('perfiles')
-      .select('id, nombre, nombre_completo, avatar_url, comuna, sobre_mi, calificacion, trabajos_realizados, telefono')
+    const postulantesIds = Array.from(
+      new Set(posts.map(p => p.postulante_id))
+    );
+
+    const {
+      data: perfilesData,
+      error: errorPerfiles,
+    } = await supabase
+      .from('perfiles_publicos')
+      .select(`
+        id,
+        nombre,
+        nombre_completo,
+        avatar_url,
+        comunas(nombre),
+        sobre_mi,
+        calificacion,
+        trabajos_realizados
+      `)
       .in('id', postulantesIds);
 
+    if (errorPerfiles) {
+      console.warn('Error al cargar perfiles públicos de postulantes:', {
+        code: errorPerfiles.code,
+        message: errorPerfiles.message,
+      });
+
+      throw new Error(
+        'No se pudieron cargar los perfiles de los postulantes.'
+      );
+    }
+
     const perfilesMap: Record<string, any> = {};
+
     if (perfilesData) {
-      perfilesData.forEach((p) => {
+      perfilesData.forEach(p => {
         perfilesMap[p.id] = p;
       });
     }
 
     return posts.map((p: any) => {
       const perf = perfilesMap[p.postulante_id] || {};
+
+      const nombreComuna = Array.isArray(perf.comunas)
+        ? perf.comunas[0]?.nombre
+        : perf.comunas?.nombre;
+
       return {
         id: String(p.id),
         postulante_id: p.postulante_id,
         nombre: perf.nombre || perf.nombre_completo || 'Postulante',
         avatar_url: perf.avatar_url || null,
-        comuna: perf.comuna || 'Santiago',
+        comuna: nombreComuna || 'Sin comuna',
         sobre_mi: perf.sobre_mi || 'Sin descripción',
         calificacion: Number(perf.calificacion || 5).toFixed(1),
         trabajos_realizados: perf.trabajos_realizados || 0,
-        telefono: perf.telefono || '',
         mensaje: p.mensaje || 'Hola, me interesa realizar esta tarea.',
         estado: p.estado,
       };
@@ -254,23 +287,52 @@ export const fetchPostulantesDeTarea = async (trabajoId: string): Promise<Postul
   }
 };
 
-export const fetchResenasUsuario = async (userId: string): Promise<ResenaItem[]> => {
-  const { data } = await supabase
+export const fetchResenasUsuario = async (
+  userId: string
+): Promise<ResenaItem[]> => {
+  const { data, error } = await supabase
     .from('resenas')
-    .select('id, calificacion, comentario, created_at, perfiles:autor_id(id, nombre, nombre_completo, avatar_url)')
-    .or(`usuario_evaluado_id.eq.${userId},evaluado_id.eq.${userId}`)
+    .select(`
+      id,
+      calificacion,
+      comentario,
+      created_at,
+      perfiles:perfiles_publicos!resenas_autor_id_fkey (
+        id,
+        nombre,
+        nombre_completo,
+        avatar_url
+      )
+    `)
+    .or(
+      `usuario_evaluado_id.eq.${userId},evaluado_id.eq.${userId}`
+    )
     .order('created_at', { ascending: false });
+
+  if (error) {
+    console.warn('Error al consultar autores de reseñas:', {
+      code: error.code,
+      message: error.message,
+    });
+    return [];
+  }
 
   if (!data) return [];
 
-  return data.map((r: any) => ({
-    id: String(r.id),
-    autor: r.perfiles?.nombre || r.perfiles?.nombre_completo || 'Usuario',
-    avatarUrl: r.perfiles?.avatar_url || null,
-    calificacion: Number(r.calificacion) || 5,
-    fecha: new Date(r.created_at).toLocaleDateString('es-CL'),
-    comentario: r.comentario || '',
-  }));
+  return data.map((r: any) => {
+    const autor = Array.isArray(r.perfiles)
+      ? r.perfiles[0]
+      : r.perfiles;
+
+    return {
+      id: String(r.id),
+      autor: autor?.nombre || autor?.nombre_completo || 'Usuario',
+      avatarUrl: autor?.avatar_url || null,
+      calificacion: Number(r.calificacion) || 5,
+      fecha: new Date(r.created_at).toLocaleDateString('es-CL'),
+      comentario: r.comentario || '',
+    };
+  });
 };
 
 export const fetchHistorialTrabajosHechos = async (userId: string): Promise<TrabajoRealizadoItem[]> => {
@@ -317,7 +379,7 @@ export const fetchHistorialTrabajosHechos = async (userId: string): Promise<Trab
 
   if (solicitantesIds.length > 0) {
     const { data: perfilesData } = await supabase
-      .from('perfiles')
+      .from('perfiles_publicos')
       .select('id, nombre, nombre_completo, avatar_url')
       .in('id', solicitantesIds);
 
@@ -365,56 +427,98 @@ export const fetchHistorialTrabajosHechos = async (userId: string): Promise<Trab
   });
 };
 
-export const aceptarPostulante = async (trabajoId: string, postulacionId: string, postulanteId: string) => {
-  await supabase
-    .from('trabajos')
-    .update({ estado: 'en_progreso', trabajador_id: postulanteId })
-    .eq('id', trabajoId);
+export const aceptarPostulante = async (
+  trabajoId: string,
+  postulacionId: string,
+  _postulanteId?: string
+) => {
+  const { error } = await supabase.rpc(
+    'aceptar_postulante',
+    {
+      p_trabajo_id: trabajoId,
+      p_postulacion_id: postulacionId,
+    }
+  );
 
-  await supabase
-    .from('postulaciones')
-    .update({ estado: 'aceptado' })
-    .eq('id', postulacionId);
+  if (error) {
+    console.warn('Error al aceptar postulante:', {
+      code: error.code,
+      message: error.message,
+    });
+
+    if (error.code === '42501') {
+      throw new Error(
+        'No tienes autorización para aceptar esta postulación.'
+      );
+    }
+
+    if (error.code === '55000') {
+      throw new Error(
+        'El acuerdo cambió o requiere revisión. Actualiza la tarea antes de continuar.'
+      );
+    }
+
+    if (error.code === '22023') {
+      throw new Error(
+        'No puedes aceptarte como trabajador de tu propio trabajo.'
+      );
+    }
+
+    throw new Error(
+      'No pudimos aceptar la postulación. Actualiza la tarea y comprueba su estado.'
+    );
+  }
 };
 
-export const cancelarAcuerdoTrabajador = async (trabajoId: string, postulanteId?: string | null) => {
-  const { error: errTrabajo } = await supabase
-    .from('trabajos')
-    .update({ estado: 'disponible', trabajador_id: null })
-    .eq('id', trabajoId);
-
-  if (errTrabajo) throw errTrabajo;
-
-  let query = supabase
-    .from('postulaciones')
-    .update({ estado: 'rechazado' })
-    .eq('trabajo_id', trabajoId);
-
-  if (postulanteId) {
-    query = query.eq('postulante_id', postulanteId);
-  } else {
-    query = query.eq('estado', 'aceptado');
+export const cancelarAcuerdoTrabajador = async (
+  trabajoId: string,
+  trabajadorId?: string | null
+) => {
+  if (!trabajadorId) {
+    throw new Error(
+      'No se identificó al trabajador asignado. Actualiza la tarea antes de cancelar.'
+    );
   }
 
-  const { error: errPost } = await query;
-  if (errPost) throw errPost;
-};
+  const { error } = await supabase.rpc(
+    'cancelar_acuerdo',
+    {
+      p_trabajo_id: trabajoId,
+      p_trabajador_id: trabajadorId,
+    }
+  );
 
-export const eliminarMiPublicacion = async (trabajoId: string) => {
-  const { data: aceptadas } = await supabase
-    .from('postulaciones')
-    .select('id')
-    .eq('trabajo_id', trabajoId)
-    .eq('estado', 'aceptado');
+  if (error) {
+    console.warn('Error al cancelar acuerdo:', {
+      code: error.code,
+      message: error.message,
+    });
 
-  if (aceptadas && aceptadas.length > 0) {
-    throw new Error('No puedes eliminar una tarea que tiene a un trabajador aceptado.');
+    if (error.code === '42501') {
+      throw new Error(
+        'No tienes autorización para cancelar este acuerdo.'
+      );
+    }
+
+    if (error.code === '55000') {
+      throw new Error(
+        'El acuerdo cambió o requiere revisión. Actualiza la tarea antes de continuar.'
+      );
+    }
+
+    if (error.code === '22023') {
+      throw new Error(
+        'No se identificó correctamente el acuerdo que deseas cancelar.'
+      );
+    }
+
+    throw new Error(
+      'No pudimos cancelar el acuerdo. Actualiza la tarea y comprueba su estado.'
+    );
   }
-
-  await supabase.from('postulaciones').delete().eq('trabajo_id', trabajoId);
-  const { error } = await supabase.from('trabajos').delete().eq('id', trabajoId);
-  if (error) throw error;
 };
+
+export { eliminarTrabajoPropio as eliminarMiPublicacion } from './functionsTrabajos';
 
 export const editarMiPublicacion = async (
   trabajoId: string,
@@ -452,8 +556,6 @@ export const editarMiPublicacion = async (
  */
 export const enviarCalificacionMutua = async ({
   trabajoId,
-  autorId,
-  evaluadoId,
   calificacion,
   comentario,
   esFinalizacion = false,
@@ -465,120 +567,49 @@ export const enviarCalificacionMutua = async ({
   comentario: string;
   esFinalizacion?: boolean;
 }) => {
-  if (!evaluadoId) {
-    throw new Error('No se encontró a la contraparte a calificar.');
+  const { data, error } = await supabase.rpc(
+    'calificar_trabajo',
+    {
+      p_trabajo_id: trabajoId,
+      p_calificacion: calificacion,
+      p_comentario: comentario,
+      p_finalizar: esFinalizacion,
+    }
+  );
+
+  if (error) {
+    console.warn('Error al registrar la calificación:', {
+      code: error.code,
+      message: error.message,
+    });
+
+    if (error.code === '42501') {
+      throw new Error(
+        'No tienes autorización para calificar o finalizar este trabajo.'
+      );
+    }
+
+    if (error.code === '22023') {
+      throw new Error(
+        'Selecciona entre 1 y 5 estrellas y escribe un comentario de hasta 2000 caracteres.'
+      );
+    }
+
+    if (error.code === '55000') {
+      throw new Error(
+        'No se pudo registrar la calificación. Actualiza la tarea y comprueba el estado del acuerdo. Si el problema continúa, revisaremos el mensaje de la terminal.'
+      );
+    }
+
+    throw new Error(
+      'No pudimos guardar la calificación. Comprueba tu conexión y actualiza la tarea antes de volver a intentarlo.'
+    );
   }
 
-  // 1. Si es la finalización por parte del empleador, cambiar estado del trabajo a completado
-  if (esFinalizacion) {
-    try {
-      const { error: errTrabajo } = await supabase
-        .from('trabajos')
-        .update({ estado: 'completado', trabajador_id: evaluadoId })
-        .eq('id', trabajoId);
-
-      if (errTrabajo) {
-        console.warn('Advertencia al actualizar estado del trabajo:', errTrabajo.message);
-      }
-    } catch (e: any) {
-      console.warn('Error capturado en update trabajo:', e.message);
-    }
-
-    try {
-      const { data: perf } = await supabase
-        .from('perfiles')
-        .select('trabajos_realizados')
-        .eq('id', evaluadoId)
-        .single();
-
-      if (perf) {
-        await supabase
-          .from('perfiles')
-          .update({ trabajos_realizados: (perf.trabajos_realizados || 0) + 1 })
-          .eq('id', evaluadoId);
-      }
-    } catch (e: any) {
-      console.warn('Error capturado en update trabajos_realizados:', e.message);
-    }
-  }
-
-  // 2. Guardar o actualizar la reseña en la tabla 'resenas'
-  const { data: resenaExistente } = await supabase
-    .from('resenas')
-    .select('id')
-    .eq('trabajo_id', trabajoId)
-    .eq('autor_id', autorId)
-    .maybeSingle();
-
-  const resenaObj: any = {
-    trabajo_id: trabajoId,
-    autor_id: autorId,
-    evaluado_id: evaluadoId,
-    usuario_evaluado_id: evaluadoId,
-    calificacion,
-    comentario: comentario.trim() || 'Excelente labor y trato cordial.',
-  };
-
-  if (resenaExistente?.id) {
-    let { error: errUpd } = await supabase
-      .from('resenas')
-      .update(resenaObj)
-      .eq('id', resenaExistente.id);
-
-    // Si falló por falta del campo 'estado' en el trigger de PostgreSQL, reintentar pasando 'estado'
-    if (errUpd && errUpd.message?.toLowerCase().includes('estado')) {
-      const { error: errRetry } = await supabase
-        .from('resenas')
-        .update({ ...resenaObj, estado: 'completado' })
-        .eq('id', resenaExistente.id);
-      errUpd = errRetry;
-    }
-
-    if (errUpd) throw errUpd;
-  } else {
-    let { error: errIns } = await supabase
-      .from('resenas')
-      .insert([resenaObj]);
-
-    // Si falló por falta del campo 'estado' en el trigger de PostgreSQL, reintentar pasando 'estado'
-    if (errIns && errIns.message?.toLowerCase().includes('estado')) {
-      const { error: errRetry } = await supabase
-        .from('resenas')
-        .insert([{ ...resenaObj, estado: 'completado' }]);
-      errIns = errRetry;
-    }
-
-    if (errIns) throw errIns;
-  }
-
-  // 3. Recalcular promedio y total de reseñas para el usuario evaluado
-  try {
-    const { data: todasLasResenas } = await supabase
-      .from('resenas')
-      .select('calificacion')
-      .or(`evaluado_id.eq.${evaluadoId},usuario_evaluado_id.eq.${evaluadoId}`);
-
-    if (todasLasResenas && todasLasResenas.length > 0) {
-      const total = todasLasResenas.length;
-      const suma = todasLasResenas.reduce((acc, r) => acc + (Number(r.calificacion) || 5), 0);
-      const nuevoPromedio = Number((suma / total).toFixed(1));
-
-      await supabase
-        .from('perfiles')
-        .update({
-          calificacion: nuevoPromedio,
-          total_resenas: total,
-        })
-        .eq('id', evaluadoId);
-    }
-  } catch (e: any) {
-    console.warn('Advertencia al recalcular promedio en perfil:', e.message);
-  }
+  return data;
 };
 
-/**
- * Mantiene compatibilidad con llamadas existentes para finalizar tareas
- */
+/** Mantiene compatibilidad con llamadas existentes para finalizar tareas */
 export const finalizarYCalificarTarea = async (
   trabajoId: string,
   solicitanteId: string,
