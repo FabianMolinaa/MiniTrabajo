@@ -60,7 +60,8 @@ interface ResumenPublicacion {
 const URGENCIAS = ['Hoy mismo', 'Mañana', 'Este fin de semana', 'A coordinar'];
 
 export default function PublicarScreen() {
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef=
+    useRef<React.ComponentRef<typeof ScrollView>>(null);
 
   const [refrescando, setRefrescando] = useState(false);
   const [titulo, setTitulo] = useState('');
