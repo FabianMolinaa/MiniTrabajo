@@ -292,7 +292,8 @@ export async function crearORecuperarPago(
 }
 
 export async function verificarPago(
-  pago: PagoWebpay
+  pago: PagoWebpay,
+  soloConsultar = false
 ): Promise<CompraCreditos> {
   if (!pago.token) {
     return consultarCompra(pago.compra.id);
@@ -301,9 +302,10 @@ export async function verificarPago(
   const { error } = await supabase.functions.invoke(
     'webpay-confirmar',
     {
-      body: {
-        token_ws: pago.token,
-      },
+      // TBK_TOKEN utiliza la consulta GET del backend existente.
+      body: soloConsultar
+        ? { TBK_TOKEN: pago.token }
+        : { token_ws: pago.token },
     }
   );
 

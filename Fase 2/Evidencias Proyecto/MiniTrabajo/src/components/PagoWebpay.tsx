@@ -73,7 +73,7 @@ export default function PagoWebpay({
         resultado.token &&
         resultado.compra.estado === 'pendiente'
       ) {
-        const compra = await verificarPago(resultado);
+        const compra = await verificarPago(resultado, true);
         resultado = { ...resultado, compra };
       }
 
@@ -118,7 +118,7 @@ export default function PagoWebpay({
     return () => sub.remove();
   }, [onCerrar]);
 
-  const verificar = useCallback(async () => {
+  const verificar = useCallback(async (soloConsultar = false) => {
     if (!pago || ocupado.current) return;
 
     ocupado.current = true;
@@ -127,7 +127,7 @@ export default function PagoWebpay({
     setMensaje(null);
 
     try {
-      const compra = await verificarPago(pago);
+      const compra = await verificarPago(pago, soloConsultar);
 
       if (montado.current) {
         setPago(actual =>
@@ -248,7 +248,7 @@ export default function PagoWebpay({
           }}
           onLoadEnd={event => {
             if (esRetornoWebpay(event.nativeEvent.url)) {
-              void verificar();
+              void verificar(true);
             }
           }}
           onError={() =>
