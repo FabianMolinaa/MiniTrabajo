@@ -24,10 +24,10 @@ export const validarFormularioPublicar = (
   creditosDisponibles: number = 0,
   coordenadas?: { latitude: number; longitude: number } | null,
 ): { valido: boolean; error?: string } => {
-  if (!titulo.trim() || titulo.trim().length < 6) {
+  if (titulo.trim().length < 6 || titulo.trim().length > 80) {
     return {
       valido: false,
-      error: "El título debe tener al menos 6 caracteres.",
+      error: "El título debe tener entre 6 y 80 caracteres.",
     };
   }
 
@@ -62,10 +62,10 @@ export const validarFormularioPublicar = (
     };
   }
 
-  if (!descripcion.trim() || descripcion.trim().length < 20) {
+  if (descripcion.trim().length < 20 || descripcion.trim().length > 2000) {
     return {
       valido: false,
-      error: "La descripción debe tener al menos 20 caracteres.",
+      error: "La descripción debe tener entre 20 y 2.000 caracteres.",
     };
   }
 

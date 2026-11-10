@@ -479,18 +479,25 @@ export default function TrabajosScreen() {
     if (!trabajoSeleccionado) return;
 
     const montoNum = parseInt(editMonto.replace(/[^0-9]/g, ""), 10) || 0;
-    if (editTitulo.trim().length < 6) {
+    if (
+      editTitulo.trim().length < 6 ||
+      editTitulo.trim().length > 80
+    ) {
       dispararAlerta(
         "Validación",
-        "El título debe tener al menos 6 caracteres.",
+        "El título debe tener entre 6 y 80 caracteres.",
         "error",
       );
       return;
     }
-    if (editDescripcion.trim().length < 20) {
+
+    if (
+      editDescripcion.trim().length < 20 ||
+      editDescripcion.trim().length > 2000
+    ) {
       dispararAlerta(
         "Validación",
-        "La descripción debe tener al menos 20 caracteres.",
+        "La descripción debe tener entre 20 y 2.000 caracteres.",
         "error",
       );
       return;
@@ -1226,6 +1233,7 @@ export default function TrabajosScreen() {
                       <TextInput
                         style={[styles.editInputField, { height: "100%" }]}
                         value={editDescripcion}
+                        maxLength={2000}
                         onChangeText={setEditDescripcion}
                         multiline
                         numberOfLines={4}

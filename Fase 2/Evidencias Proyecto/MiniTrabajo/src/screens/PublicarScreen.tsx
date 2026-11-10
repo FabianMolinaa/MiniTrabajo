@@ -605,6 +605,7 @@ export default function PublicarScreen() {
             multiline
             numberOfLines={4}
             value={descripcion}
+            maxLength={2000}
             onChangeText={(txt) => {
               setDescripcion(txt);
               if (mensajeError) setMensajeError(null);

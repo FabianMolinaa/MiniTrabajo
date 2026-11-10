@@ -422,18 +422,25 @@ export default function PerfilScreen() {
     if (!tareaOpciones) return;
     const montoNum = parseInt(editMontoTarea.replace(/[^0-9]/g, ""), 10) || 0;
 
-    if (editTituloTarea.trim().length < 6) {
+    if (
+      editTituloTarea.trim().length < 6 ||
+      editTituloTarea.trim().length > 80
+    ) {
       dispararAlerta(
         "Validación",
-        "El título debe tener al menos 6 caracteres.",
+        "El título debe tener entre 6 y 80 caracteres.",
         "error",
       );
       return;
     }
-    if (editDescripcionTarea.trim().length < 20) {
+
+    if (
+      editDescripcionTarea.trim().length < 20 ||
+      editDescripcionTarea.trim().length > 2000
+    ) {
       dispararAlerta(
         "Validación",
-        "La descripción debe tener al menos 20 caracteres.",
+        "La descripción debe tener entre 20 y 2.000 caracteres.",
         "error",
       );
       return;
@@ -654,6 +661,23 @@ export default function PerfilScreen() {
   const handleGuardarPerfil = async () => {
     if (!tempNombre.trim() || !usuarioId) {
       dispararAlerta("Atención", "El nombre no puede estar vacío.", "error");
+      return;
+    }
+    if (tempNombre.trim().length > 80) {
+      dispararAlerta(
+        "Atención",
+        "El nombre puede tener como máximo 80 caracteres.",
+        "error",
+      );
+      return;
+    }
+
+    if (tempSobreMi.trim().length > 1000) {
+      dispararAlerta(
+        "Atención",
+        "La descripción puede tener como máximo 1.000 caracteres.",
+        "error",
+      );
       return;
     }
     setGuardandoCambios(true);
@@ -1577,6 +1601,7 @@ export default function PerfilScreen() {
                       <TextInput
                         style={[styles.editTaskInputField, { height: "100%" }]}
                         value={editDescripcionTarea}
+                        maxLength={2000}
                         onChangeText={setEditDescripcionTarea}
                         multiline
                         numberOfLines={4}
@@ -2298,6 +2323,7 @@ export default function PerfilScreen() {
                         <TextInput
                           style={styles.inputField}
                           value={tempNombre}
+                          maxLength={80}
                           onChangeText={setTempNombre}
                           placeholder="Tu nombre"
                           placeholderTextColor={colors.textMuted}
@@ -2340,6 +2366,7 @@ export default function PerfilScreen() {
                           multiline
                           numberOfLines={4}
                           value={tempSobreMi}
+                          maxLength={1000}
                           onChangeText={setTempSobreMi}
                           placeholder="Describe tus habilidades..."
                           placeholderTextColor={colors.textMuted}

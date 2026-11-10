@@ -197,7 +197,11 @@ export default function AuthScreen() {
     const rutLimpio = limpiarRut(rut);
     const emailNormalizado = email.trim().toLowerCase();
 
-    if (!nombre.trim()) nuevosErrores.nombre = 'El nombre es obligatorio';
+    if (!nombre.trim()) {
+      nuevosErrores.nombre = 'El nombre es obligatorio';
+    } else if (nombre.trim().length > 80) {
+      nuevosErrores.nombre = 'El nombre puede tener como máximo 80 caracteres';
+    }
 
     if (!rutLimpio) {
       nuevosErrores.rut = 'Ingresa tu RUT';
@@ -443,6 +447,7 @@ export default function AuthScreen() {
                         placeholder="Ej: Fabián Molina"
                         placeholderTextColor={colors.textMuted}
                         value={nombre}
+                        maxLength={80}
                         onChangeText={(t) => {
                           setErrores((p) => ({ ...p, nombre: undefined }));
                           setNombre(t);
