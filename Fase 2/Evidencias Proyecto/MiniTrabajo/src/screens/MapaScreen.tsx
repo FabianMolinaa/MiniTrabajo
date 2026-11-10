@@ -18,6 +18,7 @@ import {
 } from 'react-native';
 import MapView, { Marker, Callout, PROVIDER_DEFAULT } from '../components/NativeMaps';
 import * as Location from 'expo-location';
+import { solicitarPermisoUbicacionAproximada } from '../services/permisosUbicacion';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
@@ -142,7 +143,7 @@ export default function MapaScreen() {
   // 1. Obtener ubicación del usuario
   const obtenerUbicacionUsuario = useCallback(async (centrarMapa: boolean = false) => {
     try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
+      const { status } = await solicitarPermisoUbicacionAproximada();
       if (status !== 'granted') {
         setPermisoUbicacion(false);
         return null;
@@ -244,18 +245,13 @@ export default function MapaScreen() {
   };
 
   const handleCentrarMiUbicacion = async () => {
-    if (!permisoUbicacion) {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert(
-          'Permiso de Ubicación',
-          'Activa los permisos de ubicación para centrar el mapa en tu posición actual.'
-        );
-        return;
-      }
-      setPermisoUbicacion(true);
+    const coords = await obtenerUbicacionUsuario(true);
+    if (!coords) {
+      Alert.alert(
+        'Ubicación no disponible',
+        'Revisa el permiso de ubicación aproximada y que la ubicación del teléfono esté activada.'
+      );
     }
-    await obtenerUbicacionUsuario(true);
   };
 
   const handlePostular = async (trabajo: TrabajoUI) => {

@@ -1,27 +1,9 @@
 import { decode } from "base64-arraybuffer";
 import { supabase } from "../services/supabase";
+import { esUbicacionEnRM } from "./ubicacion";
+export { LIMITES_RM, esUbicacionEnRM } from "./ubicacion";
 
 export const COSTO_DESTACAR = 2;
-
-// Límites geográficos aproximados de la Región Metropolitana
-export const LIMITES_RM = {
-  LAT_MIN: -34.3,
-  LAT_MAX: -32.9,
-  LNG_MIN: -71.8,
-  LNG_MAX: -69.75,
-};
-
-/**
- * Comprueba si unas coordenadas dadas caen dentro de la Región Metropolitana
- */
-export const esUbicacionEnRM = (lat: number, lng: number): boolean => {
-  return (
-    lat >= LIMITES_RM.LAT_MIN &&
-    lat <= LIMITES_RM.LAT_MAX &&
-    lng >= LIMITES_RM.LNG_MIN &&
-    lng <= LIMITES_RM.LNG_MAX
-  );
-};
 
 export const limpiarMontoChileno = (montoTexto: string): number => {
   const limpio = montoTexto.replace(/[^0-9]/g, "");

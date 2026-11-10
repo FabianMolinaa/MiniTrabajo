@@ -23,6 +23,8 @@ import * as Location from 'expo-location';
 import { colors } from '../theme/colors';
 import { styles } from '../styles/PublicarStyles';
 import { supabase } from '../services/supabase';
+import { solicitarPermisoUbicacionAproximada } from '../services/permisosUbicacion';
+import { aproximarUbicacion } from '../utils/ubicacion';
 import {
   COSTO_DESTACAR,
   limpiarMontoChileno,
@@ -188,70 +190,90 @@ export default function PublicarScreen() {
   };
 
   const handleObtenerUbicacionGPS = async () => {
+    if (obteniendoGPS) return;
+
     setMensajeError(null);
+    setCoordenadas(null);
+    setInfoGPS(null);
     setObteniendoGPS(true);
 
     try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
+      const permiso = await solicitarPermisoUbicacionAproximada();
+      if (!permiso.granted) {
         Alert.alert(
-          'Permiso denegado',
-          'Permite el acceso a tu ubicación para obtener las coordenadas de la labor.'
+          'Ubicación opcional',
+          'Puedes permitir la ubicación aproximada o publicar seleccionando únicamente la comuna.'
         );
-        setObteniendoGPS(false);
         return;
       }
 
       const posicion = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.Balanced,
+        accuracy: Location.Accuracy.Low,
       });
 
-      const { latitude, longitude } = posicion.coords;
-
-      // 1. Verificación por Bounding Box de la RM
-      if (!esUbicacionEnRM(latitude, longitude)) {
+      if (!esUbicacionEnRM(
+        posicion.coords.latitude,
+        posicion.coords.longitude
+      )) {
         Alert.alert(
           'Zona no habilitada',
-          'Actualmente MiniTrabajo opera exclusivamente en la Región Metropolitana (Santiago). ¡Pronto llegaremos a tu región!'
+          'La ubicación recibida está fuera de la zona habilitada. Selecciona la comuna para publicar sin GPS.'
         );
-        setCoordenadas(null);
-        setInfoGPS(null);
-        setObteniendoGPS(false);
         return;
       }
 
-      // 2. Geocodificación inversa para obtener nombre de calle y comuna
-      const geocodigos = await Location.reverseGeocodeAsync({ latitude, longitude });
+      const zona = aproximarUbicacion({
+        latitude: posicion.coords.latitude,
+        longitude: posicion.coords.longitude,
+      });
 
-      if (geocodigos && geocodigos.length > 0) {
-        const direccion = geocodigos[0];
-        const subregion = (direccion.subregion || direccion.city || direccion.district || '').toLowerCase();
+      // Conservar y consultar únicamente la zona aproximada.
+      setCoordenadas(zona);
+      setInfoGPS('Zona aproximada. Revisa la comuna seleccionada.');
 
-        // Auto-seleccionar comuna si coincide con el catálogo
-        const comunaCoincidente = listaComunas.find((c) =>
-          subregion.includes(c.nombre.toLowerCase()) || c.nombre.toLowerCase().includes(subregion)
-        );
+      try {
+        const geocodigos = await Location.reverseGeocodeAsync(zona);
+        const normalizar = (nombre: string) => {
+          const valor = nombre.normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .toLowerCase()
+            .replace(/\s+/g, '');
+          return valor === 'santiago' ? 'santiagocentro' : valor;
+        };
 
-        if (comunaCoincidente) {
-          setComunaSeleccionada(comunaCoincidente);
+        for (const direccion of geocodigos) {
+          const nombres = [
+            direccion.district,
+            direccion.city,
+            direccion.subregion,
+          ];
+
+          for (const nombre of nombres) {
+            if (!nombre) continue;
+            const comuna = listaComunas.find(c =>
+              normalizar(c.nombre) === normalizar(nombre)
+            );
+
+            if (comuna) {
+              setComunaSeleccionada(comuna);
+              setInfoGPS(`Zona aproximada de ${comuna.nombre}.`);
+              return;
+            }
+          }
         }
-
-        const detalleTexto = direccion.street
-          ? `${direccion.street} ${direccion.streetNumber || ''}, ${direccion.subregion || direccion.city || ''}`
-          : `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
-
-        setInfoGPS(detalleTexto.trim());
-      } else {
-        setInfoGPS(`${latitude.toFixed(4)}, ${longitude.toFixed(4)}`);
+      } catch {
+        // La zona sigue disponible si no se pudo identificar la comuna.
       }
-
-      setCoordenadas({ latitude, longitude });
     } catch {
-      Alert.alert('Error GPS', 'No pudimos obtener la señal de GPS. Asegúrate de tener la ubicación encendida.');
+      Alert.alert(
+        'Ubicación no disponible',
+        'No pudimos obtener tu ubicación aproximada. Puedes seleccionar la comuna y publicar sin GPS.'
+      );
     } finally {
       setObteniendoGPS(false);
     }
   };
+
 
   const handleToggleDestacar = (value: boolean) => {
     if (value && creditosDisponibles < COSTO_DESTACAR) {
@@ -313,9 +335,13 @@ export default function PublicarScreen() {
         imagenes: urlsPublicas,
       };
 
-      if (coordenadas) {
-        nuevoTrabajo.latitud = coordenadas.latitude;
-        nuevoTrabajo.longitud = coordenadas.longitude;
+      const zonaPublicada = coordenadas
+        ? aproximarUbicacion(coordenadas)
+        : null;
+
+      if (zonaPublicada) {
+        nuevoTrabajo.latitud = zonaPublicada.latitude;
+        nuevoTrabajo.longitud = zonaPublicada.longitude;
       }
 
       const { error: insertError } = await supabase.from('trabajos').insert(nuevoTrabajo);
@@ -346,7 +372,7 @@ export default function PublicarScreen() {
         monto: montoNumerico,
         comuna: comunaSeleccionada!.nombre,
         destacado: destacarConCreditos,
-        coordenadas,
+        coordenadas: zonaPublicada,
       });
 
       setTitulo('');
@@ -518,6 +544,7 @@ export default function PublicarScreen() {
             style={[styles.gpsButton, coordenadas && styles.gpsButtonActive]}
             activeOpacity={0.8}
             onPress={handleObtenerUbicacionGPS}
+            accessibilityLabel="Usar ubicación aproximada"
             disabled={obteniendoGPS}
           >
             {obteniendoGPS ? (
@@ -537,13 +564,19 @@ export default function PublicarScreen() {
             <View style={styles.gpsBadgeContent}>
               <Ionicons name="location" size={14} color={colors.accentBlue} />
               <Text style={styles.gpsBadgeText} numberOfLines={1}>
-                {infoGPS ? `Ubicación GPS: ${infoGPS}` : 'GPS RM fijado'}
+                {infoGPS || 'Zona aproximada seleccionada'}
               </Text>
             </View>
             <TouchableOpacity onPress={() => { setCoordenadas(null); setInfoGPS(null); }}>
               <Ionicons name="close-circle" size={16} color={colors.accentBlue} />
             </TouchableOpacity>
           </View>
+        )}
+
+        {coordenadas && (
+          <Text style={{ color: colors.textSecondary, fontSize: 12, marginBottom: 12 }}>
+            Publicaremos un sector aproximado. Confirma que la comuna seleccionada sea la del trabajo.
+          </Text>
         )}
 
         <Text style={styles.label}>¿Para cuándo lo necesitas?</Text>
@@ -745,9 +778,9 @@ export default function PublicarScreen() {
                 </View>
                 {resumenExito.coordenadas && (
                   <View style={styles.summaryRow}>
-                    <Text style={styles.summaryKey}>GPS RM:</Text>
+                    <Text style={styles.summaryKey}>Ubicación:</Text>
                     <Text style={[styles.summaryVal, { color: colors.accentBlue }]}>
-                      {resumenExito.coordenadas.latitude.toFixed(4)}, {resumenExito.coordenadas.longitude.toFixed(4)}
+                      Zona aproximada
                     </Text>
                   </View>
                 )}

@@ -1,4 +1,5 @@
 import { supabase } from "../services/supabase";
+import { aproximarUbicacion, esUbicacionEnRM } from "./ubicacion";
 
 export type EstadoTrabajo =
   | "disponible"
@@ -17,6 +18,8 @@ export interface TrabajoUI {
   categoriaId: number;
   comuna: string;
   comunaId: number;
+  comunaLatitud?: number | null;
+  comunaLongitud?: number | null;
   solicitante: string;
   solicitanteId: string;
   avatarUrl?: string;
@@ -30,8 +33,6 @@ export interface TrabajoUI {
   totalPostulantes: number;
   latitud?: number | null;
   longitud?: number | null;
-  lat?: number | null;
-  lng?: number | null;
   distanciaKm?: number | null;
 }
 
@@ -82,9 +83,9 @@ export const calcularDistanciaKm = (
 };
 
 export const formatearDistancia = (km: number | null | undefined): string => {
-  if (km === null || km === undefined) return "Ubicación comunal";
-  if (km < 1) return `A ${Math.round(km * 1000)} m`;
-  return `A ${km.toFixed(1)} km`;
+  if (km == null || !Number.isFinite(km) || km < 0) return "Ubicación comunal";
+  if (km < 1) return "A menos de 1 km (aprox.)";
+  return `Aprox. ${Math.round(km)} km`;
 };
 
 export const formatearMonedaCLP = (monto: number): string => {
@@ -111,132 +112,121 @@ export const fetchTrabajosMuro = async (
   usuarioId: string | null,
   coordsUsuario?: { latitude: number; longitude: number } | null,
 ): Promise<TrabajoUI[]> => {
-  let trabajosData: any[] = [];
-
-  const { data: dataJoin, error: errorJoin } = await supabase
+  const { data: trabajos, error } = await supabase
     .from("trabajos")
-    .select(
-      `
-      id,
-      user_id,
-      titulo,
-      descripcion,
-      monto,
-      destacado,
-      estado,
-      imagenes,
-      created_at,
-      latitud,
-      longitud,
-      categoria_id,
-      comuna_id,
-      categorias ( id, nombre ),
-      comunas ( id, nombre )
-    `,
-    )
+    .select(`
+      id, user_id, titulo, descripcion, monto, destacado, estado,
+      imagenes, created_at, latitud, longitud, categoria_id, comuna_id,
+      categorias (id, nombre),
+      comunas (id, nombre, latitud, longitud)
+    `)
     .neq("estado", "completado")
     .order("destacado", { ascending: false })
     .order("created_at", { ascending: false });
 
-  if (errorJoin) {
-    const { data: dataSimple } = await supabase
-      .from("trabajos")
-      .select("*")
-      .neq("estado", "completado")
-      .order("destacado", { ascending: false })
-      .order("created_at", { ascending: false });
-    trabajosData = dataSimple || [];
-  } else {
-    trabajosData = dataJoin || [];
+  if (error) {
+    throw new Error("No se pudieron cargar los trabajos y sus comunas.");
   }
 
-  trabajosData = trabajosData.filter(
-    (t) => String(t.estado || "").toLowerCase() !== "completado",
-  );
+  if (!trabajos?.length) return [];
 
-  const trabajoIds = trabajosData.map((t) => t.id);
-  let trabajosConAceptado = new Set<string>();
+  const trabajoIds = trabajos.map(t => t.id);
+  const trabajosConAceptado = new Set<string>();
 
-  if (trabajoIds.length > 0) {
-    const { data: postulacionesData } = await supabase
-      .from("postulaciones")
-      .select("trabajo_id, estado")
-      .in("trabajo_id", trabajoIds)
-      .eq("estado", "aceptado");
+  const { data: aceptadas, error: errorAceptadas } = await supabase
+    .from("postulaciones")
+    .select("trabajo_id")
+    .in("trabajo_id", trabajoIds)
+    .eq("estado", "aceptado");
 
-    if (postulacionesData) {
-      postulacionesData.forEach((p) => trabajosConAceptado.add(p.trabajo_id));
-    }
+  if (errorAceptadas) {
+    throw new Error("No se pudo comprobar el estado de las postulaciones.");
   }
 
-  const userIds = Array.from(
-    new Set(trabajosData.map((t) => t.user_id).filter(Boolean)),
-  );
-  const perfilesMap: Record<string, any> = {};
+  aceptadas?.forEach(p => trabajosConAceptado.add(p.trabajo_id));
 
-  if (userIds.length > 0) {
-    const { data: perfilesData, error: errorPerfiles } = await supabase
-      .from("perfiles_publicos")
-      .select("id, nombre, nombre_completo, avatar_url")
-      .in("id", userIds);
+  const userIds = [...new Set(trabajos.map(t => t.user_id))];
+  const perfilesMap = new Map<string, {
+    nombre: string | null;
+    nombre_completo: string | null;
+    avatar_url: string | null;
+  }>();
 
-    if (errorPerfiles) {
-      console.warn("Error al consultar perfiles públicos:", {
-        code: errorPerfiles.code,
-        message: errorPerfiles.message,
-      });
+  const { data: perfiles, error: errorPerfiles } = await supabase
+    .from("perfiles_publicos")
+    .select("id, nombre, nombre_completo, avatar_url")
+    .in("id", userIds);
 
-      throw new Error(
-        "No se pudieron cargar los perfiles de los publicadores.",
-      );
-    }
+  if (errorPerfiles) {
+    throw new Error("No se pudieron cargar los perfiles de los publicadores.");
   }
 
-  let misPostulaciones: Record<string, { id: string; estado: string }> = {};
+  perfiles?.forEach(p => perfilesMap.set(p.id, p));
+
+  const misPostulaciones = new Map<string, {
+    id: string;
+    estado: string;
+  }>();
+
   if (usuarioId) {
-    const { data: postData } = await supabase
+    const { data: posts, error: errorPosts } = await supabase
       .from("postulaciones")
       .select("id, trabajo_id, estado")
       .eq("postulante_id", usuarioId);
 
-    if (postData) {
-      postData.forEach((p: any) => {
-        misPostulaciones[p.trabajo_id] = { id: p.id, estado: p.estado };
-      });
+    if (errorPosts) {
+      throw new Error("No se pudieron cargar tus postulaciones.");
     }
+
+    posts?.forEach(p => {
+      misPostulaciones.set(p.trabajo_id, {
+        id: p.id,
+        estado: p.estado,
+      });
+    });
   }
 
-  return trabajosData.map((t: any) => {
-    const perfil = perfilesMap[t.user_id] || {};
-    const latFinal = t.latitud ?? t.lat ?? null;
-    const lngFinal = t.longitud ?? t.lng ?? null;
-    const tieneCoords = latFinal != null && lngFinal != null;
-    let distKm: number | null = null;
+  return trabajos.map(t => {
+    const perfil = perfilesMap.get(t.user_id);
+    const comuna = Array.isArray(t.comunas) ? t.comunas[0] : t.comunas;
+    const categoria = Array.isArray(t.categorias)
+      ? t.categorias[0]
+      : t.categorias;
 
-    if (coordsUsuario && tieneCoords) {
-      distKm = calcularDistanciaKm(
+    const lat = Number(t.latitud);
+    const lng = Number(t.longitud);
+    const gps = esUbicacionEnRM(lat, lng)
+      ? aproximarUbicacion({ latitude: lat, longitude: lng })
+      : null;
+
+    const comunaLat = Number(comuna?.latitud);
+    const comunaLng = Number(comuna?.longitud);
+    const comunaValida = esUbicacionEnRM(comunaLat, comunaLng);
+
+    let distanciaKm: number | null = null;
+    if (
+      gps && coordsUsuario &&
+      Number.isFinite(coordsUsuario.latitude) &&
+      Number.isFinite(coordsUsuario.longitude)
+    ) {
+      distanciaKm = calcularDistanciaKm(
         coordsUsuario.latitude,
         coordsUsuario.longitude,
-        Number(latFinal),
-        Number(lngFinal),
+        gps.latitude,
+        gps.longitude,
       );
     }
 
-    const postulacion = misPostulaciones[t.id];
-    let estadoFinal: EstadoTrabajo = "disponible";
-    if (postulacion) {
-      if (postulacion.estado === "aceptado") {
-        estadoFinal = "aceptado";
-      } else if (postulacion.estado === "rechazado") {
-        estadoFinal = "rechazado";
-      } else {
-        estadoFinal = "postulado";
-      }
-    }
+    const postulacion = misPostulaciones.get(t.id);
+    let estado: EstadoTrabajo = "disponible";
 
-    const estaAceptado =
-      trabajosConAceptado.has(t.id) ||
-      String(t.estado || "").toLowerCase() === "aceptado";
+    if (postulacion) {
+      estado = postulacion.estado === "aceptado"
+        ? "aceptado"
+        : postulacion.estado === "rechazado"
+          ? "rechazado"
+          : "postulado";
+    }
 
     return {
       id: String(t.id),
@@ -244,28 +234,28 @@ export const fetchTrabajosMuro = async (
       descripcion: t.descripcion || "",
       monto: formatearMonedaCLP(Number(t.monto) || 0),
       montoRaw: Number(t.monto) || 0,
-      categoria: t.categorias?.nombre || "General",
-      categoriaId: t.categoria_id || t.categorias?.id || 0,
-      comuna: t.comunas?.nombre || "Santiago",
-      comunaId: t.comuna_id || t.comunas?.id || 0,
-      solicitante: perfil.nombre_completo || "Usuario",
+      categoria: categoria?.nombre || "General",
+      categoriaId: t.categoria_id || categoria?.id || 0,
+      comuna: comuna?.nombre || "Sin comuna",
+      comunaId: t.comuna_id || comuna?.id || 0,
+      comunaLatitud: comunaValida ? comunaLat : null,
+      comunaLongitud: comunaValida ? comunaLng : null,
+      solicitante: perfil?.nombre || perfil?.nombre_completo || "Usuario",
       solicitanteId: t.user_id || "",
-      avatarUrl: perfil.avatar_url,
+      avatarUrl: perfil?.avatar_url || undefined,
       destacado: Boolean(t.destacado),
-      estado: estadoFinal,
+      estado,
       estadoPublicacionOriginal: t.estado || "disponible",
-      tieneAceptado: estaAceptado,
+      tieneAceptado: trabajosConAceptado.has(t.id) || t.estado === "aceptado",
       miPostulacionId: postulacion?.id,
       imagenes: Array.isArray(t.imagenes) ? t.imagenes : [],
       fechaPublicacion: t.created_at
         ? new Date(t.created_at).toLocaleDateString("es-CL")
         : "Hoy",
       totalPostulantes: 0,
-      latitud: latFinal,
-      longitud: lngFinal,
-      lat: latFinal,
-      lng: lngFinal,
-      distanciaKm: distKm,
+      latitud: gps?.latitude ?? null,
+      longitud: gps?.longitude ?? null,
+      distanciaKm,
     };
   });
 };
