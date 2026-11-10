@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useRef } from "react";
 import PagoWebpay from "../components/PagoWebpay";
 import { abrirWhatsAppTrabajo } from "../services/contactos";
 import HistorialCompras from "../components/HistorialCompras";
@@ -139,6 +139,8 @@ export default function PerfilScreen() {
     [],
   );
   const [cargandoPostulantes, setCargandoPostulantes] = useState(false);
+  const [errorPostulantes, setErrorPostulantes] = useState<string | null>(null);
+  const solicitudPostulantesRef = useRef(0);
   const [postulanteDetalle, setPostulanteDetalle] =
     useState<PostulanteBD | null>(null);
   const [resenasPostulante, setResenasPostulante] = useState<ResenaItem[]>([]);
@@ -268,11 +270,27 @@ export default function PerfilScreen() {
   }, [cargarDatos]);
 
   const handleSeleccionarTarea = async (tarea: MiPublicacion) => {
+    const solicitudActual = ++solicitudPostulantesRef.current;
     setTareaSeleccionada(tarea);
+    setPostulantesDeTarea([]);
+    setErrorPostulantes(null);
     setCargandoPostulantes(true);
-    const postulantes = await fetchPostulantesDeTarea(tarea.id);
-    setPostulantesDeTarea(postulantes);
-    setCargandoPostulantes(false);
+    try {
+      const postulantes = await fetchPostulantesDeTarea(tarea.id);
+      if (solicitudActual === solicitudPostulantesRef.current) {
+        setPostulantesDeTarea(postulantes);
+      }
+    } catch {
+      if (solicitudActual === solicitudPostulantesRef.current) {
+        setErrorPostulantes(
+          "No pudimos cargar los postulantes. Revisa tu conexión e inténtalo nuevamente.",
+        );
+      }
+    } finally {
+      if (solicitudActual === solicitudPostulantesRef.current) {
+        setCargandoPostulantes(false);
+      }
+    }
   };
 
   const handleVerPerfilPostulante = async (postulante: PostulanteBD) => {
@@ -1774,6 +1792,28 @@ export default function PerfilScreen() {
                             color={colors.accentBlue}
                             style={{ marginTop: 20 }}
                           />
+                        ) : errorPostulantes ? (
+                          <View style={styles.emptyApplicantsBox}>
+                            <Ionicons
+                              name="alert-circle-outline"
+                              size={36}
+                              color={colors.textMuted}
+                            />
+                            <Text
+                              style={[styles.emptyApplicantsTitle, { textAlign: "center" }]}
+                            >
+                              {errorPostulantes}
+                            </Text>
+                            <TouchableOpacity
+                              style={[styles.btnAccept, { flex: 0, paddingHorizontal: 18 }]}
+                              accessibilityRole="button"
+                              accessibilityLabel="Reintentar la carga de postulantes"
+                              onPress={() => void handleSeleccionarTarea(tareaSeleccionada)}
+                            >
+                              <Ionicons name="refresh" size={15} color="#ffffff" />
+                              <Text style={styles.btnAcceptText}>Reintentar</Text>
+                            </TouchableOpacity>
+                          </View>
                         ) : postulantesDeTarea.length === 0 ? (
                           <View style={styles.emptyApplicantsBox}>
                             <Ionicons

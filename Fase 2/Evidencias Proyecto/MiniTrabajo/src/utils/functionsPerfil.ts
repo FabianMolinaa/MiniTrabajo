@@ -207,84 +207,97 @@ export const fetchPublicacionesUsuario = async (userId: string): Promise<MiPubli
   });
 };
 
+interface PostulacionFila {
+  id: string;
+  postulante_id: string;
+  mensaje: string;
+  estado: PostulanteBD['estado'] | null;
+}
+
+interface PerfilPostulanteFila {
+  id: string;
+  nombre: string | null;
+  nombre_completo: string | null;
+  avatar_url: string | null;
+  comunas: { nombre: string } | { nombre: string }[] | null;
+  sobre_mi: string | null;
+  calificacion: number | string | null;
+  trabajos_realizados: number | null;
+}
+
 export const fetchPostulantesDeTarea = async (
   trabajoId: string
 ): Promise<PostulanteBD[]> => {
-  try {
-    const { data: posts, error } = await supabase
-      .from('postulaciones')
-      .select('id, postulante_id, mensaje, estado')
-      .eq('trabajo_id', trabajoId)
-      .order('created_at', { ascending: false });
+  const mensajeError = 'No pudimos cargar los postulantes. Inténtalo nuevamente.';
 
-    if (error) throw error;
+  const { data: posts, error } = await supabase
+    .from('postulaciones')
+    .select('id, postulante_id, mensaje, estado')
+    .eq('trabajo_id', trabajoId)
+    .order('created_at', { ascending: false })
+    .overrideTypes<PostulacionFila[], { merge: false }>();
 
-    if (!posts || posts.length === 0) return [];
-
-    const postulantesIds = Array.from(
-      new Set(posts.map(p => p.postulante_id))
-    );
-
-    const {
-      data: perfilesData,
-      error: errorPerfiles,
-    } = await supabase
-      .from('perfiles_publicos')
-      .select(`
-        id,
-        nombre,
-        nombre_completo,
-        avatar_url,
-        comunas(nombre),
-        sobre_mi,
-        calificacion,
-        trabajos_realizados
-      `)
-      .in('id', postulantesIds);
-
-    if (errorPerfiles) {
-      console.warn('Error al cargar perfiles públicos de postulantes:', {
-        code: errorPerfiles.code,
-        message: errorPerfiles.message,
-      });
-
-      throw new Error(
-        'No se pudieron cargar los perfiles de los postulantes.'
-      );
-    }
-
-    const perfilesMap: Record<string, any> = {};
-
-    if (perfilesData) {
-      perfilesData.forEach(p => {
-        perfilesMap[p.id] = p;
-      });
-    }
-
-    return posts.map((p: any) => {
-      const perf = perfilesMap[p.postulante_id] || {};
-
-      const nombreComuna = Array.isArray(perf.comunas)
-        ? perf.comunas[0]?.nombre
-        : perf.comunas?.nombre;
-
-      return {
-        id: String(p.id),
-        postulante_id: p.postulante_id,
-        nombre: perf.nombre || perf.nombre_completo || 'Postulante',
-        avatar_url: perf.avatar_url || null,
-        comuna: nombreComuna || 'Sin comuna',
-        sobre_mi: perf.sobre_mi || 'Sin descripción',
-        calificacion: Number(perf.calificacion || 5).toFixed(1),
-        trabajos_realizados: perf.trabajos_realizados || 0,
-        mensaje: p.mensaje || 'Hola, me interesa realizar esta tarea.',
-        estado: p.estado,
-      };
-    });
-  } catch (err) {
-    console.error('Error cargando postulantes:', err);
-    return [];
+  if (error) {
+    console.warn('Error al consultar postulaciones:', { code: error.code });
+    throw new Error(mensajeError);
   }
+  if (posts === null) throw new Error(mensajeError);
+  if (posts.length === 0) return [];
+
+  const postulantesIds = Array.from(new Set(posts.map(p => p.postulante_id)));
+  const { data: perfilesData, error: errorPerfiles } = await supabase
+    .from('perfiles_publicos')
+    .select(`
+      id,
+      nombre,
+      nombre_completo,
+      avatar_url,
+      comunas(nombre),
+      sobre_mi,
+      calificacion,
+      trabajos_realizados
+    `)
+    .in('id', postulantesIds)
+    .overrideTypes<PerfilPostulanteFila[], { merge: false }>();
+
+  if (errorPerfiles) {
+    console.warn('Error al consultar perfiles públicos de postulantes:', {
+      code: errorPerfiles.code,
+    });
+    throw new Error(mensajeError);
+  }
+  if (perfilesData === null) throw new Error(mensajeError);
+
+  const perfilesMap = new Map<string, PerfilPostulanteFila>();
+  perfilesData.forEach(perfil => perfilesMap.set(perfil.id, perfil));
+
+  return posts.map(post => {
+    const estado = post.estado;
+    if (estado !== 'pendiente' && estado !== 'aceptado' && estado !== 'rechazado') {
+      throw new Error(mensajeError);
+    }
+
+    const perfil = perfilesMap.get(post.postulante_id);
+    const comuna = Array.isArray(perfil?.comunas)
+      ? perfil.comunas[0]
+      : perfil?.comunas;
+    const calificacion = Number(perfil?.calificacion ?? 0);
+    const calificacionValida = Number.isFinite(calificacion)
+      && calificacion >= 0 && calificacion <= 5;
+
+    return {
+      id: post.id,
+      postulante_id: post.postulante_id,
+      nombre: perfil?.nombre || perfil?.nombre_completo || 'Postulante',
+      avatar_url: perfil?.avatar_url || null,
+      comuna: comuna?.nombre || 'Sin comuna',
+      sobre_mi: perfil?.sobre_mi || 'Sin descripción',
+      calificacion: (calificacionValida ? calificacion : 0).toFixed(1),
+      trabajos_realizados: perfil?.trabajos_realizados ?? 0,
+      mensaje: post.mensaje,
+      estado,
+    };
+  });
 };
 
 export const fetchResenasUsuario = async (
