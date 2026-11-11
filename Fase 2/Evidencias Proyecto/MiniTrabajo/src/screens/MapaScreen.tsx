@@ -201,6 +201,20 @@ export default function MapaScreen() {
     cargarDatos,
   } = useDatosMuro(userLocationRef);
 
+  const errorMapa = errorTrabajos ?? errorFiltros;
+  const estadoMapa = errorMapa || estadoFiltros === "error"
+    ? "error"
+    : cargando || estadoFiltros !== "lista" ? "cargando" : "lista";
+
+  useEffect(() => {
+    if (estadoMapa !== "lista") {
+      setTrabajoSeleccionado(null);
+      setModalDetalleVisible(false);
+      setModalFiltrosVisible(false);
+      setDropdownVisible("ninguno");
+    }
+  }, [estadoMapa]);
+
   useFocusEffect(
     useCallback(() => {
       let activo = true;
@@ -288,6 +302,20 @@ export default function MapaScreen() {
       setPostulando(false);
     }
   };
+
+  if (estadoMapa !== "lista") {
+    return (
+      <View style={styles.container}>
+        <EstadoListaRemota
+          estado={estadoMapa}
+          error={errorMapa}
+          onReintentar={() => void cargarDatos()}
+        >
+          {null}
+        </EstadoListaRemota>
+      </View>
+    );
+  }
 
   const categoriaNombreActual =
     categoriaSelId === "todas"
@@ -934,15 +962,6 @@ export default function MapaScreen() {
               showsVerticalScrollIndicator={false}
               contentContainerStyle={styles.sheetBody}
             >
-              {estadoFiltros !== "lista" && (
-                <EstadoListaRemota
-                  estado={estadoFiltros}
-                  error={errorFiltros}
-                  onReintentar={() => void cargarDatos()}
-                >
-                  {null}
-                </EstadoListaRemota>
-              )}
               <Text style={styles.filterSectionTitle}>Tipo de tarea</Text>
               <TouchableOpacity
                 style={styles.dropdownButton}
@@ -1231,33 +1250,6 @@ export default function MapaScreen() {
         )}
       </Modal>
 
-      {/* Overlay de Carga inicial */}
-      {errorTrabajos && (
-        <View
-          style={[
-            styles.loadingBox,
-            { position: "absolute", top: 180, left: 20, right: 20, zIndex: 20 },
-          ]}
-        >
-          <EstadoListaRemota
-            estado="error"
-            error={errorTrabajos}
-            onReintentar={() => void cargarDatos()}
-          >
-            {null}
-          </EstadoListaRemota>
-        </View>
-      )}
-      {cargando && (
-        <View style={styles.loadingOverlay}>
-          <View style={styles.loadingBox}>
-            <ActivityIndicator size="large" color={colors.accentBlue} />
-            <Text style={styles.loadingText}>
-              Cargando mapa de pololitos...
-            </Text>
-          </View>
-        </View>
-      )}
     </View>
   );
 }

@@ -4,6 +4,7 @@ import { abrirWhatsAppTrabajo } from "../services/contactos";
 import HistorialCompras from "../components/HistorialCompras";
 import EstadoListaRemota from "../components/EstadoListaRemota";
 import { useListaRemota } from "../hooks/useListaRemota";
+import { fetchComunasFiltro } from "../utils/functionsTrabajos";
 import { useFocusEffect } from "@react-navigation/native";
 import {
   Text,
@@ -141,8 +142,12 @@ export default function PerfilScreen() {
     fetchHistorialTrabajosHechos,
     "No pudimos cargar tu historial de trabajos. Revisa tu conexión e inténtalo nuevamente.",
   );
-  const [comunasDisponibles, setComunasDisponibles] = useState<ComunaItem[]>(
-    [],
+  const {
+    datos: comunasDisponibles, estado: estadoComunasPerfil,
+    error: errorComunasPerfil, cargar: cargarComunasPerfil,
+  } = useListaRemota<ComunaItem>(
+    fetchComunasFiltro,
+    "No pudimos cargar las comunas. Revisa tu conexión e inténtalo nuevamente.",
   );
 
   // Tarea y Postulantes
@@ -280,23 +285,12 @@ export default function PerfilScreen() {
         }
       })();
 
-      const comunasPendientes = (async () => {
-        const respuesta = await supabase.from("comunas")
-          .select("id, nombre").order("nombre", { ascending: true });
-        if (!vigente()) return;
-        if (respuesta.error) {
-          console.warn("Error al consultar comunas del perfil:", { code: respuesta.error.code });
-        } else if (respuesta.data) {
-          setComunasDisponibles(respuesta.data);
-        }
-      })();
-
       await Promise.allSettled([
         perfilPendiente,
         cargarPublicaciones(user.id),
         cargarResenasRecibidas(user.id),
         cargarHistorialTrabajos(user.id),
-        comunasPendientes,
+        cargarComunasPerfil('catalogo'),
       ]);
     } catch {
       if (vigente()) {
@@ -307,7 +301,7 @@ export default function PerfilScreen() {
     } finally {
       if (vigente()) setRefrescando(false);
     }
-  }, [cargarPublicaciones, cargarResenasRecibidas, cargarHistorialTrabajos]);
+  }, [cargarPublicaciones, cargarResenasRecibidas, cargarHistorialTrabajos, cargarComunasPerfil]);
 
   useFocusEffect(
     useCallback(() => {
@@ -2514,7 +2508,10 @@ export default function PerfilScreen() {
                       <TouchableOpacity
                         style={styles.dropdownSelectorBtn}
                         activeOpacity={0.8}
-                        onPress={() => setModalComunasVisible(true)}
+                        onPress={() => {
+                          setModalComunasVisible(true);
+                          void cargarComunasPerfil('catalogo');
+                        }}
                       >
                         <View
                           style={{
@@ -2603,40 +2600,42 @@ export default function PerfilScreen() {
                       />
                     </TouchableOpacity>
                   </View>
-                  <FlatList
-                    data={comunasDisponibles}
-                    keyExtractor={(item) => item.id.toString()}
-                    renderItem={({ item }) => (
-                      <TouchableOpacity
-                        style={[
-                          styles.comunaItem,
-                          tempComunaId === item.id && styles.comunaItemActive,
-                        ]}
-                        onPress={() => {
-                          setTempComunaId(item.id);
-                          setTempComunaNombre(item.nombre);
-                          setModalComunasVisible(false);
-                        }}
-                      >
-                        <Text
+                  <EstadoListaRemota estado={estadoComunasPerfil === 'lista' && comunasDisponibles.length === 0 ? 'error' : estadoComunasPerfil} error={errorComunasPerfil ?? 'No hay comunas disponibles.'} onReintentar={() => void cargarComunasPerfil('catalogo')}>
+                    <FlatList
+                      data={comunasDisponibles}
+                      keyExtractor={(item) => item.id.toString()}
+                      renderItem={({ item }) => (
+                        <TouchableOpacity
                           style={[
-                            styles.comunaItemText,
-                            tempComunaId === item.id &&
-                              styles.comunaItemTextActive,
+                            styles.comunaItem,
+                            tempComunaId === item.id && styles.comunaItemActive,
                           ]}
+                          onPress={() => {
+                            setTempComunaId(item.id);
+                            setTempComunaNombre(item.nombre);
+                            setModalComunasVisible(false);
+                          }}
                         >
-                          {item.nombre}
-                        </Text>
-                        {tempComunaId === item.id && (
-                          <Ionicons
-                            name="checkmark"
-                            size={18}
-                            color={colors.accentBlue}
-                          />
-                        )}
-                      </TouchableOpacity>
-                    )}
-                  />
+                          <Text
+                            style={[
+                              styles.comunaItemText,
+                              tempComunaId === item.id &&
+                              styles.comunaItemTextActive,
+                            ]}
+                          >
+                            {item.nombre}
+                          </Text>
+                          {tempComunaId === item.id && (
+                            <Ionicons
+                              name="checkmark"
+                              size={18}
+                              color={colors.accentBlue}
+                            />
+                          )}
+                        </TouchableOpacity>
+                      )}
+                    />
+                  </EstadoListaRemota>
                 </View>
               </View>
             </View>

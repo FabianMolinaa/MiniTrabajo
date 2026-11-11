@@ -5,6 +5,18 @@ export { LIMITES_RM, esUbicacionEnRM } from "./ubicacion";
 
 export const COSTO_DESTACAR = 2;
 
+export const fetchCreditosPublicar = async (userId: string): Promise<number> => {
+  const { data, error } = await supabase.from('perfiles')
+    .select('creditos').eq('id', userId).maybeSingle()
+    .overrideTypes<{ creditos: number | null }, { merge: false }>();
+  if (error || data === null || data.creditos === null
+      || !Number.isSafeInteger(data.creditos) || data.creditos < 0) {
+    console.warn('Error al consultar saldo para publicar:', { code: error?.code });
+    throw new Error('No pudimos cargar tu saldo. Inténtalo nuevamente.');
+  }
+  return data.creditos;
+};
+
 export const limpiarMontoChileno = (montoTexto: string): number => {
   const limpio = montoTexto.replace(/[^0-9]/g, "");
   return parseInt(limpio, 10) || 0;
