@@ -1,4 +1,6 @@
 import { supabase } from "./supabase";
+import type { PostulanteBD } from "./postulaciones";
+import { leerCalificacionResena } from "../utils/calificaciones";
 import { aproximarUbicacion, esUbicacionEnRM } from "../utils/ubicacion";
 import { calcularDistanciaKm, formatearMonedaCLP } from "../utils/functionsTrabajos";
 
@@ -439,4 +441,133 @@ export const cancelarAcuerdoTrabajador = async (
       'No pudimos cancelar el acuerdo. Actualiza la tarea y comprueba su estado.'
     );
   }
+};
+
+export interface MiPublicacion {
+  id: string;
+  titulo: string;
+  descripcion: string;
+  categoria: string;
+  monto: string;
+  montoRaw: number;
+  fecha: string;
+  estado: string;
+  trabajador_id?: string | null;
+  trabajador_nombre?: string | null;
+  trabajador_avatar?: string | null;
+  imagenes?: string[];
+  total_postulantes?: number;
+  calificadoPorMi?: boolean;
+  miCalificacion?: {
+    calificacion: number;
+    comentario: string;
+  } | null;
+}
+
+interface PublicacionFila {
+  id: string;
+  titulo: string;
+  descripcion: string;
+  monto: number;
+  estado: 'disponible' | 'aceptado' | 'completado';
+  trabajador_id: string | null;
+  imagenes: string[] | null;
+  created_at: string;
+  categorias: { nombre: string } | { nombre: string }[] | null;
+  postulaciones: { id: string; estado: PostulanteBD['estado'] | null; postulante_id: string }[];
+}
+
+export const fetchPublicacionesUsuario = async (userId: string): Promise<MiPublicacion[]> => {
+  const mensajeError = 'No pudimos cargar tus publicaciones. Inténtalo nuevamente.';
+  const { data: trabajos, error } = await supabase
+    .from('trabajos')
+    .select(`
+      id, titulo, descripcion, monto, estado, trabajador_id,
+      imagenes, created_at, categorias(nombre),
+      postulaciones(id, estado, postulante_id)
+    `)
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+    .overrideTypes<PublicacionFila[], { merge: false }>();
+
+  if (error) {
+    console.warn('Error al consultar publicaciones propias:', { code: error.code });
+    throw new Error(mensajeError);
+  }
+  if (trabajos === null) throw new Error(mensajeError);
+  if (trabajos.length === 0) return [];
+
+  for (const trabajo of trabajos) {
+    if (
+      !['disponible', 'aceptado', 'completado'].includes(trabajo.estado)
+      || (trabajo.estado === 'disponible') !== (trabajo.trabajador_id === null)
+    ) {
+      throw new Error(mensajeError);
+    }
+  }
+
+  const trabajadorIds = Array.from(new Set(
+    trabajos.map(trabajo => trabajo.trabajador_id).filter((id): id is string => id !== null)
+  ));
+  const [perfilesRes, resenasRes] = await Promise.all([
+    trabajadorIds.length > 0
+      ? supabase.from('perfiles_publicos')
+        .select('id, nombre, nombre_completo, avatar_url')
+        .in('id', trabajadorIds)
+        .overrideTypes<PerfilMuroFila[], { merge: false }>()
+      : Promise.resolve({ data: [], error: null }),
+    supabase.from('resenas')
+      .select('trabajo_id, calificacion, comentario')
+      .eq('autor_id', userId)
+      .in('trabajo_id', trabajos.map(trabajo => trabajo.id))
+      .overrideTypes<{
+          trabajo_id: string | null;
+          calificacion: number | string;
+          comentario: string;
+        }[], { merge: false }>(),
+  ]);
+
+  if (perfilesRes.error || resenasRes.error) {
+    console.warn('Error al completar las publicaciones propias:', {
+      code: perfilesRes.error?.code ?? resenasRes.error?.code,
+    });
+    throw new Error(mensajeError);
+  }
+  if (perfilesRes.data === null || resenasRes.data === null) throw new Error(mensajeError);
+
+  const perfilesMap = new Map<string, PerfilMuroFila>();
+  perfilesRes.data.forEach(perfil => perfilesMap.set(perfil.id, perfil));
+  const resenasMap = new Map<string, { calificacion: number; comentario: string }>();
+  resenasRes.data.forEach(resena => {
+    if (resena.trabajo_id === null) throw new Error(mensajeError);
+    resenasMap.set(resena.trabajo_id, {
+      calificacion: leerCalificacionResena(resena.calificacion),
+      comentario: resena.comentario,
+    });
+  });
+
+  return trabajos.map(trabajo => {
+    const categoria = Array.isArray(trabajo.categorias)
+      ? trabajo.categorias[0] ?? null
+      : trabajo.categorias;
+    const trabajador = trabajo.trabajador_id ? perfilesMap.get(trabajo.trabajador_id) : null;
+    const resena = resenasMap.get(trabajo.id);
+    return {
+      id: trabajo.id,
+      titulo: trabajo.titulo,
+      descripcion: trabajo.descripcion,
+      categoria: categoria?.nombre || 'General',
+      monto: `$${Number(trabajo.monto).toLocaleString('es-CL')}`,
+      montoRaw: trabajo.monto,
+      fecha: new Date(trabajo.created_at).toLocaleDateString('es-CL'),
+      estado: trabajo.estado,
+      trabajador_id: trabajo.trabajador_id,
+      trabajador_nombre: trabajador?.nombre || trabajador?.nombre_completo || null,
+      trabajador_avatar: trabajador?.avatar_url || null,
+      imagenes: trabajo.imagenes ?? [],
+      total_postulantes: trabajo.postulaciones.length,
+      calificadoPorMi: Boolean(resena),
+      miCalificacion: resena ?? null,
+    };
+  });
 };

@@ -5,6 +5,8 @@ import {
   editarTrabajoPropio,
   eliminarTrabajoPropio,
   cancelarAcuerdoTrabajador,
+  fetchPublicacionesUsuario,
+  type MiPublicacion,
 } from "../services/trabajos";
 import {
   fetchPostulantesDeTarea,
@@ -42,8 +44,6 @@ import { styles } from "../styles/PerfilStyles";
 import {
   ResenaItem,
   TrabajoRealizadoItem,
-  MiPublicacion,
-  fetchPublicacionesUsuario,
   fetchResenasUsuario,
   fetchHistorialTrabajosHechos,
 } from "../utils/functionsPerfil";
