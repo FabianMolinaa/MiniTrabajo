@@ -4,7 +4,7 @@ import { abrirWhatsAppTrabajo } from "../services/contactos";
 import HistorialCompras from "../components/HistorialCompras";
 import EstadoListaRemota from "../components/EstadoListaRemota";
 import { useListaRemota } from "../hooks/useListaRemota";
-import { fetchComunasFiltro } from "../utils/functionsTrabajos";
+import { fetchComunasFiltro } from "../services/catalogos";
 import { useFocusEffect } from "@react-navigation/native";
 import {
   Text,

@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import EstadoListaRemota from '../components/EstadoListaRemota';
 import { useListaRemota } from '../hooks/useListaRemota';
-import { fetchCategoriasFiltro, fetchComunasFiltro } from '../utils/functionsTrabajos';
+import { fetchCategoriasFiltro, fetchComunasFiltro } from '../services/catalogos';
 import {
   Text,
   View,

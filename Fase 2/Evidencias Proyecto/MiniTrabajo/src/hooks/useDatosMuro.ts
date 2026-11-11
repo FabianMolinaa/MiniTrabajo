@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '../services/supabase';
 import {
-  CategoriaFiltro, ComunaFiltro, TrabajoUI,
-  fetchCategoriasFiltro, fetchComunasFiltro, fetchTrabajosMuro,
-} from '../utils/functionsTrabajos';
+  fetchCategoriasFiltro, fetchComunasFiltro,
+  type CategoriaFiltro, type ComunaFiltro,
+} from '../services/catalogos';
+import { fetchTrabajosMuro, type TrabajoUI } from '../utils/functionsTrabajos';
 import type { EstadoCargaLista } from './useListaRemota';
 
 interface Coordenadas { latitude: number; longitude: number; }
