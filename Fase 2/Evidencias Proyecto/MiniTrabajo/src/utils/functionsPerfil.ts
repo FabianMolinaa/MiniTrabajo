@@ -47,31 +47,6 @@ export interface MiPublicacion {
   } | null;
 }
 
-export interface PerfilData {
-  nombre: string;
-  sobre_mi: string;
-  avatar_url: string | null;
-  calificacion: string;
-  total_resenas: number;
-  trabajos_realizados: number;
-  creditos: number;
-  comuna_id: number | null;
-  comuna_nombre: string;
-}
-
-interface PerfilUsuarioFila {
-  nombre: string;
-  nombre_completo: string | null;
-  sobre_mi: string | null;
-  avatar_url: string | null;
-  calificacion: number | string | null;
-  total_resenas: number | null;
-  trabajos_realizados: number | null;
-  creditos: number | null;
-  comuna_id: number | null;
-  comunas: { nombre: string } | { nombre: string }[] | null;
-}
-
 interface PublicacionFila {
   id: string;
   titulo: string;
@@ -84,50 +59,6 @@ interface PublicacionFila {
   categorias: { nombre: string } | { nombre: string }[] | null;
   postulaciones: { id: string; estado: PostulanteBD['estado'] | null; postulante_id: string }[];
 }
-
-function leerCantidadPerfil(valor: number | null): number {
-  if (valor === null || !Number.isSafeInteger(valor) || valor < 0) {
-    throw new Error('No pudimos cargar los datos de tu perfil. Inténtalo nuevamente.');
-  }
-  return valor;
-}
-
-export const fetchPerfilUsuario = async (userId: string): Promise<PerfilData> => {
-  const mensajeError = 'No pudimos cargar tu perfil. Inténtalo nuevamente.';
-  const { data: perfil, error } = await supabase
-    .from('perfiles')
-    .select(`
-      nombre, nombre_completo, sobre_mi, avatar_url,
-      calificacion, total_resenas, trabajos_realizados, creditos,
-      comuna_id, comunas(nombre)
-    `)
-    .eq('id', userId)
-    .maybeSingle()
-    .overrideTypes<PerfilUsuarioFila, { merge: false }>();
-
-  if (error) {
-    console.warn('Error al consultar el perfil propio:', { code: error.code });
-    throw new Error(mensajeError);
-  }
-  if (perfil === null || perfil.calificacion === null) throw new Error(mensajeError);
-  const calificacion = Number(perfil.calificacion);
-  if (!Number.isFinite(calificacion) || calificacion < 0 || calificacion > 5) {
-    throw new Error(mensajeError);
-  }
-  const comuna = relacionUnica(perfil.comunas);
-
-  return {
-    nombre: perfil.nombre || perfil.nombre_completo || 'Usuario',
-    sobre_mi: perfil.sobre_mi || 'Sin descripción aún.',
-    avatar_url: perfil.avatar_url,
-    calificacion: calificacion.toFixed(1),
-    total_resenas: leerCantidadPerfil(perfil.total_resenas),
-    trabajos_realizados: leerCantidadPerfil(perfil.trabajos_realizados),
-    creditos: leerCantidadPerfil(perfil.creditos),
-    comuna_id: perfil.comuna_id,
-    comuna_nombre: comuna?.nombre || 'Sin comuna',
-  };
-};
 
 export const fetchPublicacionesUsuario = async (userId: string): Promise<MiPublicacion[]> => {
   const mensajeError = 'No pudimos cargar tus publicaciones. Inténtalo nuevamente.';

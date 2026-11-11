@@ -12,6 +12,7 @@ import {
   type PostulanteBD,
 } from "../services/postulaciones";
 import { enviarCalificacionMutua } from "../services/resenas";
+import { fetchPerfilUsuario, type PerfilData } from "../services/perfiles";
 import HistorialCompras from "../components/HistorialCompras";
 import EstadoListaRemota from "../components/EstadoListaRemota";
 import { useListaRemota } from "../hooks/useListaRemota";
@@ -42,8 +43,6 @@ import {
   ResenaItem,
   TrabajoRealizadoItem,
   MiPublicacion,
-  PerfilData,
-  fetchPerfilUsuario,
   fetchPublicacionesUsuario,
   fetchResenasUsuario,
   fetchHistorialTrabajosHechos,
