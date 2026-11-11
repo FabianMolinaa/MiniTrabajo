@@ -20,7 +20,11 @@ import {
   fetchResenasUsuario,
   type ResenaItem,
 } from "../services/resenas";
-import { fetchPerfilUsuario, type PerfilData } from "../services/perfiles";
+import {
+  fetchPerfilUsuario,
+  actualizarPerfilPropio,
+  type PerfilData,
+} from "../services/perfiles";
 import HistorialCompras from "../components/HistorialCompras";
 import EstadoListaRemota from "../components/EstadoListaRemota";
 import { useListaRemota } from "../hooks/useListaRemota";
@@ -809,16 +813,13 @@ export default function PerfilScreen() {
       }
 
       // Actualizamos 'nombre' y 'nombre_completo'
-      const { error } = await supabase
-        .from("perfiles")
-        .update({
-          nombre: tempNombre.trim(),
-          nombre_completo: tempNombre.trim(),
-          sobre_mi: tempSobreMi.trim(),
-          avatar_url: finalAvatarUrl,
-          comuna_id: tempComunaId,
-        })
-        .eq("id", usuarioId);
+      const { error } = await actualizarPerfilPropio(usuarioId, {
+        nombre: tempNombre.trim(),
+        nombre_completo: tempNombre.trim(),
+        sobre_mi: tempSobreMi.trim(),
+        avatar_url: finalAvatarUrl,
+        comuna_id: tempComunaId,
+      });
 
       if (error) throw error;
       setModalEditarVisible(false);

@@ -82,3 +82,27 @@ export const fetchCreditosPublicar = async (userId: string): Promise<number> => 
   }
   return data.creditos;
 };
+
+export interface DatosEdicionPerfil {
+  nombre: string;
+  nombre_completo: string;
+  sobre_mi: string;
+  avatar_url: string | null;
+  comuna_id: number | null;
+}
+
+export const actualizarPerfilPropio = async (
+  usuarioId: string,
+  cambios: DatosEdicionPerfil,
+) => {
+  return await supabase
+    .from("perfiles")
+    .update({
+      nombre: cambios.nombre,
+      nombre_completo: cambios.nombre_completo,
+      sobre_mi: cambios.sobre_mi,
+      avatar_url: cambios.avatar_url,
+      comuna_id: cambios.comuna_id,
+    })
+    .eq("id", usuarioId);
+};
