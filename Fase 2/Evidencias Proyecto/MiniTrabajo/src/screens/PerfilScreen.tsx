@@ -31,6 +31,7 @@ import HistorialCompras from "../components/HistorialCompras";
 import EstadoListaRemota from "../components/EstadoListaRemota";
 import AlertaPerfil, { type AlertaPersonalizada } from "../components/AlertaPerfil";
 import FormularioCalificacion from "../components/FormularioCalificacion";
+import FormularioEdicionPerfil, { type ComunaItem } from "../components/FormularioEdicionPerfil";
 import { useListaRemota } from "../hooks/useListaRemota";
 import { fetchComunasFiltro } from "../services/catalogos";
 import { useFocusEffect } from "@react-navigation/native";
@@ -44,9 +45,6 @@ import {
   TextInput,
   Image,
   ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
-  FlatList,
   RefreshControl,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
@@ -69,11 +67,6 @@ export interface CalificacionTarget {
   nombreContraparte: string;
   rolContraparte: "trabajador" | "empleador";
   esFinalizacion?: boolean;
-}
-
-interface ComunaItem {
-  id: number;
-  nombre: string;
 }
 
 const PAQUETES_CREDITOS = [
@@ -2295,219 +2288,39 @@ export default function PerfilScreen() {
           )}
 
           {/* MODAL 4: EDICIÓN DE PERFIL */}
-          {modalEditarVisible && (
-            <View style={CAPA_COMPLETA}>
-              <KeyboardAvoidingView
-                behavior={Platform.OS === "ios" ? "padding" : undefined}
-                style={styles.modalOverlay}
-              >
-                <View style={styles.modalOverlay}>
-                  <TouchableOpacity
-                    style={styles.modalBackdropTouch}
-                    activeOpacity={1}
-                    onPress={() => setModalEditarVisible(false)}
-                  />
-                  <View style={styles.modalSheet}>
-                    <View style={styles.sheetHeader}>
-                      <View style={styles.sheetTitleRow}>
-                        <Ionicons
-                          name="pencil"
-                          size={18}
-                          color={colors.accentBlue}
-                        />
-                        <Text style={styles.sheetTitle}>Editar Perfil</Text>
-                      </View>
-                      <TouchableOpacity
-                        onPress={() => setModalEditarVisible(false)}
-                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                      >
-                        <Ionicons
-                          name="close"
-                          size={24}
-                          color={colors.textPrimary}
-                        />
-                      </TouchableOpacity>
-                    </View>
-
-                    <ScrollView
-                      showsVerticalScrollIndicator={false}
-                      contentContainerStyle={{ paddingBottom: 20 }}
-                    >
-                      <View style={styles.editAvatarSection}>
-                        <TouchableOpacity
-                          activeOpacity={0.8}
-                          style={styles.editAvatarWrap}
-                          onPress={handlePickFoto}
-                        >
-                          {tempAvatarUri ? (
-                            <Image
-                              source={{ uri: tempAvatarUri }}
-                              style={styles.editAvatarImage}
-                            />
-                          ) : (
-                            <Ionicons
-                              name="person"
-                              size={40}
-                              color={colors.textMuted}
-                            />
-                          )}
-                          <View style={styles.cameraIconBadge}>
-                            <Ionicons name="camera" size={14} color="#ffffff" />
-                          </View>
-                        </TouchableOpacity>
-                        <Text style={styles.editAvatarHint}>
-                          Toca para cambiar foto
-                        </Text>
-                      </View>
-
-                      <Text style={styles.inputLabel}>Nombre completo</Text>
-                      <View style={styles.inputBox}>
-                        <TextInput
-                          style={styles.inputField}
-                          value={tempNombre}
-                          maxLength={80}
-                          onChangeText={setTempNombre}
-                          placeholder="Tu nombre"
-                          placeholderTextColor={colors.textMuted}
-                        />
-                      </View>
-
-                      <Text style={styles.inputLabel}>Ubicación (Comuna)</Text>
-                      <TouchableOpacity
-                        style={styles.dropdownSelectorBtn}
-                        activeOpacity={0.8}
-                        onPress={() => {
-                          setModalComunasVisible(true);
-                          void cargarComunasPerfil('catalogo');
-                        }}
-                      >
-                        <View
-                          style={{
-                            flexDirection: "row",
-                            alignItems: "center",
-                            gap: 8,
-                          }}
-                        >
-                          <Ionicons
-                            name="location-outline"
-                            size={18}
-                            color={colors.accentBlue}
-                          />
-                          <Text style={styles.dropdownSelectorText}>
-                            {tempComunaNombre}
-                          </Text>
-                        </View>
-                        <Ionicons
-                          name="chevron-down"
-                          size={18}
-                          color={colors.textMuted}
-                        />
-                      </TouchableOpacity>
-
-                      <Text style={styles.inputLabel}>Sobre mí</Text>
-                      <View style={[styles.inputBox, styles.inputBoxArea]}>
-                        <TextInput
-                          style={[styles.inputField, styles.inputFieldArea]}
-                          multiline
-                          numberOfLines={4}
-                          value={tempSobreMi}
-                          maxLength={1000}
-                          onChangeText={setTempSobreMi}
-                          placeholder="Describe tus habilidades..."
-                          placeholderTextColor={colors.textMuted}
-                          textAlignVertical="top"
-                        />
-                      </View>
-
-                      <View style={styles.editButtonsRow}>
-                        <TouchableOpacity
-                          style={styles.cancelBtn}
-                          onPress={() => setModalEditarVisible(false)}
-                        >
-                          <Text style={styles.cancelBtnText}>Cancelar</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          style={styles.saveBtn}
-                          onPress={handleGuardarPerfil}
-                          disabled={guardandoCambios}
-                        >
-                          {guardandoCambios ? (
-                            <ActivityIndicator size="small" color="#ffffff" />
-                          ) : (
-                            <Text style={styles.saveBtnText}>Guardar</Text>
-                          )}
-                        </TouchableOpacity>
-                      </View>
-                    </ScrollView>
-                  </View>
-                </View>
-              </KeyboardAvoidingView>
-            </View>
-          )}
-
-          {/* SUB-MODAL COMUNAS */}
-          {modalComunasVisible && (
-            <View style={CAPA_COMPLETA}>
-              <View style={styles.subModalOverlay}>
-                <TouchableOpacity
-                  style={styles.subModalBackdropTouch}
-                  activeOpacity={1}
-                  onPress={() => setModalComunasVisible(false)}
-                />
-                <View style={styles.dropdownModalBox}>
-                  <View style={styles.sheetHeader}>
-                    <Text style={styles.sheetTitle}>Selecciona tu Comuna</Text>
-                    <TouchableOpacity
-                      onPress={() => setModalComunasVisible(false)}
-                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                    >
-                      <Ionicons
-                        name="close"
-                        size={22}
-                        color={colors.textPrimary}
-                      />
-                    </TouchableOpacity>
-                  </View>
-                  <EstadoListaRemota estado={estadoComunasPerfil === 'lista' && comunasDisponibles.length === 0 ? 'error' : estadoComunasPerfil} error={errorComunasPerfil ?? 'No hay comunas disponibles.'} onReintentar={() => void cargarComunasPerfil('catalogo')}>
-                    <FlatList
-                      data={comunasDisponibles}
-                      keyExtractor={(item) => item.id.toString()}
-                      renderItem={({ item }) => (
-                        <TouchableOpacity
-                          style={[
-                            styles.comunaItem,
-                            tempComunaId === item.id && styles.comunaItemActive,
-                          ]}
-                          onPress={() => {
-                            setTempComunaId(item.id);
-                            setTempComunaNombre(item.nombre);
-                            setModalComunasVisible(false);
-                          }}
-                        >
-                          <Text
-                            style={[
-                              styles.comunaItemText,
-                              tempComunaId === item.id &&
-                              styles.comunaItemTextActive,
-                            ]}
-                          >
-                            {item.nombre}
-                          </Text>
-                          {tempComunaId === item.id && (
-                            <Ionicons
-                              name="checkmark"
-                              size={18}
-                              color={colors.accentBlue}
-                            />
-                          )}
-                        </TouchableOpacity>
-                      )}
-                    />
-                  </EstadoListaRemota>
-                </View>
-              </View>
-            </View>
-          )}
+          <FormularioEdicionPerfil
+              visible={modalEditarVisible}
+              valores={{
+                nombre: tempNombre,
+                sobreMi: tempSobreMi,
+                avatarUri: tempAvatarUri,
+                comunaId: tempComunaId,
+                comunaNombre: tempComunaNombre,
+              }}
+              selectorComunas={{
+                visible: modalComunasVisible,
+                opciones: comunasDisponibles,
+                estado: estadoComunasPerfil,
+                error: errorComunasPerfil,
+              }}
+              guardando={guardandoCambios}
+              onCambiarNombre={setTempNombre}
+              onCambiarSobreMi={setTempSobreMi}
+              onElegirFoto={handlePickFoto}
+              onGuardar={handleGuardarPerfil}
+              onCerrar={() => setModalEditarVisible(false)}
+              onAbrirComunas={() => {
+                setModalComunasVisible(true);
+                void cargarComunasPerfil('catalogo');
+              }}
+              onCerrarComunas={() => setModalComunasVisible(false)}
+              onReintentarComunas={() => void cargarComunasPerfil('catalogo')}
+              onSeleccionarComuna={(comuna) => {
+                setTempComunaId(comuna.id);
+                setTempComunaNombre(comuna.nombre);
+                setModalComunasVisible(false);
+              }}
+            />
 
           {/* MODAL 5: CRÉDITOS */}
           {modalVisible === "creditos" && (
