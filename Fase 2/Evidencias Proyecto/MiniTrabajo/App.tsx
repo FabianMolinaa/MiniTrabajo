@@ -8,7 +8,6 @@ import {
   FlatList,
   Pressable,
   Animated,
-  ActivityIndicator,
 } from "react-native";
 import {
   NavigationContainer,
@@ -22,10 +21,10 @@ import {
 } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { StatusBar } from "expo-status-bar";
-import { Session } from "@supabase/supabase-js";
 
 import { colors } from "./src/theme/colors";
-import { supabase } from "./src/services/supabase";
+import { useSesion } from "./src/hooks/useSesion";
+import EstadoListaRemota from "./src/components/EstadoListaRemota";
 
 import AuthScreen from "./src/screens/AuthScreen";
 import TrabajosScreen from "./src/screens/TrabajosScreen";
@@ -319,31 +318,18 @@ function Navigation() {
 }
 
 export default function App() {
-  const [session, setSession] = useState<Session | null>(null);
-  const [cargandoSesion, setCargandoSesion] = useState(true);
+  const { session, cargandoSesion, errorSesion, cargarSesion } = useSesion();
 
-  // Escuchar sesión persistente de Supabase
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setCargandoSesion(false);
-    });
-
-    const { data: authListener } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
-        setSession(session);
-      },
-    );
-
-    return () => {
-      authListener.subscription.unsubscribe();
-    };
-  }, []);
-
-  if (cargandoSesion) {
+  if (cargandoSesion || errorSesion) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={colors.accentBlue} />
+        <EstadoListaRemota
+          estado={cargandoSesion ? "cargando" : "error"}
+          error={errorSesion}
+          onReintentar={() => void cargarSesion()}
+        >
+          {null}
+        </EstadoListaRemota>
       </View>
     );
   }
@@ -351,7 +337,7 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <StatusBar style="light" />
-      <FiltrosProvider>
+      <FiltrosProvider key={session?.user?.id ?? "sin-sesion"}>
         <NavigationContainer theme={MyDarkTheme}>
         {session && session.user ? <Navigation /> : <AuthScreen />}
         </NavigationContainer>
