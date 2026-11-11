@@ -13,7 +13,11 @@ import {
   aceptarPostulante,
   type PostulanteBD,
 } from "../services/postulaciones";
-import { enviarCalificacionMutua } from "../services/resenas";
+import {
+  enviarCalificacionMutua,
+  fetchResenasUsuario,
+  type ResenaItem,
+} from "../services/resenas";
 import { fetchPerfilUsuario, type PerfilData } from "../services/perfiles";
 import HistorialCompras from "../components/HistorialCompras";
 import EstadoListaRemota from "../components/EstadoListaRemota";
@@ -42,9 +46,7 @@ import { colors } from "../theme/colors";
 import { supabase } from "../services/supabase";
 import { styles } from "../styles/PerfilStyles";
 import {
-  ResenaItem,
   TrabajoRealizadoItem,
-  fetchResenasUsuario,
   fetchHistorialTrabajosHechos,
 } from "../utils/functionsPerfil";
 

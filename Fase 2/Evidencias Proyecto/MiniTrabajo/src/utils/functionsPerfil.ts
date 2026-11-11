@@ -1,15 +1,6 @@
 import { supabase } from '../services/supabase';
 import { leerCalificacionResena } from './calificaciones';
 
-export interface ResenaItem {
-  id: string;
-  autor: string;
-  avatarUrl?: string | null;
-  calificacion: number;
-  fecha: string;
-  comentario: string;
-}
-
 export interface TrabajoRealizadoItem {
   id: string;
   titulo: string;
@@ -33,14 +24,6 @@ interface PerfilResumenFila {
   avatar_url: string | null;
 }
 
-interface ResenaRecibidaFila {
-  id: string;
-  calificacion: number | string;
-  comentario: string;
-  created_at: string;
-  perfiles: PerfilResumenFila | PerfilResumenFila[] | null;
-}
-
 interface TrabajoCompletadoFila {
   id: string;
   titulo: string;
@@ -59,40 +42,6 @@ interface ResenaEnviadaFila {
 function relacionUnica<T>(relacion: T | T[] | null): T | null {
   return Array.isArray(relacion) ? relacion[0] ?? null : relacion;
 }
-
-export const fetchResenasUsuario = async (userId: string): Promise<ResenaItem[]> => {
-  const { data, error } = await supabase
-    .from('resenas')
-    .select(`
-      id, calificacion, comentario, created_at,
-      perfiles:perfiles_publicos!resenas_autor_id_fkey (
-        id, nombre, nombre_completo, avatar_url
-      )
-    `)
-    .or(`usuario_evaluado_id.eq.${userId},evaluado_id.eq.${userId}`)
-    .order('created_at', { ascending: false })
-    .overrideTypes<ResenaRecibidaFila[], { merge: false }>();
-
-  if (error) {
-    console.warn('Error al consultar reseñas:', { code: error.code });
-    throw new Error('No pudimos cargar las reseñas. Inténtalo nuevamente.');
-  }
-  if (data === null) {
-    throw new Error('No pudimos cargar las reseñas. Inténtalo nuevamente.');
-  }
-
-  return data.map(resena => {
-    const autor = relacionUnica(resena.perfiles);
-    return {
-      id: resena.id,
-      autor: autor?.nombre || autor?.nombre_completo || 'Usuario',
-      avatarUrl: autor?.avatar_url || null,
-      calificacion: leerCalificacionResena(resena.calificacion),
-      fecha: new Date(resena.created_at).toLocaleDateString('es-CL'),
-      comentario: resena.comentario,
-    };
-  });
-};
 
 export const fetchHistorialTrabajosHechos = async (
   userId: string
