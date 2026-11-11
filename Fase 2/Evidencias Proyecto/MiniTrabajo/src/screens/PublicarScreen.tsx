@@ -4,6 +4,7 @@ import { useListaRemota } from '../hooks/useListaRemota';
 import { fetchCategoriasFiltro, fetchComunasFiltro } from '../services/catalogos';
 import { fetchCreditosPublicar } from '../services/perfiles';
 import { subirImagenTrabajoStorage } from '../services/imagenes';
+import { crearTrabajo, type TrabajoNuevo } from '../services/trabajos';
 import {
   Text,
   View,
@@ -61,12 +62,6 @@ interface ResumenPublicacion {
   comuna: string;
   destacado: boolean;
   coordenadas?: { latitude: number; longitude: number } | null;
-}
-
-interface TrabajoNuevo {
-  user_id: string; titulo: string; descripcion: string; requisitos: string;
-  categoria_id: number; comuna_id: number; monto: number; destacado: boolean;
-  estado: 'disponible'; imagenes: string[]; latitud?: number; longitud?: number;
 }
 
 const URGENCIAS = ['Hoy mismo', 'Mañana', 'Este fin de semana', 'A coordinar'];
@@ -379,7 +374,7 @@ export default function PublicarScreen() {
         nuevoTrabajo.longitud = zonaPublicada.longitude;
       }
 
-      const { error: insertError } = await supabase.from('trabajos').insert(nuevoTrabajo);
+      const { error: insertError } = await crearTrabajo(nuevoTrabajo);
 
       if (insertError) {
         setMensajeError(`Error en el servidor: ${insertError.message}`);

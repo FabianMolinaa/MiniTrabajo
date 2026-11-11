@@ -675,3 +675,13 @@ export const fetchHistorialTrabajosHechos = async (
     };
   });
 };
+
+export interface TrabajoNuevo {
+  user_id: string; titulo: string; descripcion: string; requisitos: string;
+  categoria_id: number; comuna_id: number; monto: number; destacado: boolean;
+  estado: 'disponible'; imagenes: string[]; latitud?: number; longitud?: number;
+}
+
+export const crearTrabajo = async (nuevoTrabajo: TrabajoNuevo) => {
+  return await supabase.from('trabajos').insert(nuevoTrabajo);
+};
