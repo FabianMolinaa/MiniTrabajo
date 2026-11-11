@@ -92,101 +92,152 @@ export const formatearMonedaCLP = (monto: number): string => {
   return `$${monto.toLocaleString("es-CL")}`;
 };
 
+type RelacionMuro<T> = T | T[] | null;
+interface PerfilMuroFila {
+  id: string;
+  nombre: string | null;
+  nombre_completo: string | null;
+  avatar_url: string | null;
+}
+interface TrabajoMuroFila {
+  id: string;
+  user_id: string;
+  titulo: string;
+  descripcion: string;
+  monto: number;
+  destacado: boolean | null;
+  estado: "disponible" | "aceptado" | "completado";
+  imagenes: string[] | null;
+  created_at: string;
+  latitud: number | string | null;
+  longitud: number | string | null;
+  categoria_id: number;
+  comuna_id: number;
+  categorias: RelacionMuro<{ id: number; nombre: string }>;
+  comunas: RelacionMuro<{
+    id: number;
+    nombre: string;
+    latitud: number | null;
+    longitud: number | null;
+  }>;
+}
+interface PostulacionMuroFila {
+  id: string;
+  trabajo_id: string;
+  estado: "pendiente" | "aceptado" | "rechazado" | null;
+}
+interface PerfilSolicitanteFila extends PerfilMuroFila {
+  sobre_mi: string | null;
+  calificacion: number | string | null;
+  total_resenas: number | null;
+  comunas: RelacionMuro<{ nombre: string }>;
+}
+interface ResenaSolicitanteFila {
+  id: string;
+  calificacion: number;
+  comentario: string;
+  perfiles: RelacionMuro<{
+    nombre: string | null;
+    nombre_completo: string | null;
+  }>;
+}
+
 export const fetchCategoriasFiltro = async (): Promise<CategoriaFiltro[]> => {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("categorias")
     .select("id, nombre, icono")
-    .order("id");
-  return data || [];
+    .order("id")
+    .overrideTypes<CategoriaFiltro[], { merge: false }>();
+  if (error || data === null) {
+    console.warn("Error al consultar categorías:", { code: error?.code });
+    throw new Error("No pudimos cargar las categorías. Inténtalo nuevamente.");
+  }
+  return data;
 };
 
 export const fetchComunasFiltro = async (): Promise<ComunaFiltro[]> => {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("comunas")
     .select("id, nombre")
-    .order("nombre");
-  return data || [];
+    .order("nombre")
+    .overrideTypes<ComunaFiltro[], { merge: false }>();
+  if (error || data === null) {
+    console.warn("Error al consultar comunas:", { code: error?.code });
+    throw new Error("No pudimos cargar las comunas. Inténtalo nuevamente.");
+  }
+  return data;
 };
 
 export const fetchTrabajosMuro = async (
   usuarioId: string | null,
   coordsUsuario?: { latitude: number; longitude: number } | null,
 ): Promise<TrabajoUI[]> => {
+  const mensajeError = "No pudimos cargar los trabajos. Inténtalo nuevamente.";
   const { data: trabajos, error } = await supabase
     .from("trabajos")
-    .select(`
+    .select(
+      `
       id, user_id, titulo, descripcion, monto, destacado, estado,
       imagenes, created_at, latitud, longitud, categoria_id, comuna_id,
-      categorias (id, nombre),
-      comunas (id, nombre, latitud, longitud)
-    `)
+      categorias (id, nombre), comunas (id, nombre, latitud, longitud)
+    `,
+    )
     .neq("estado", "completado")
     .order("destacado", { ascending: false })
-    .order("created_at", { ascending: false });
-
-  if (error) {
-    throw new Error("No se pudieron cargar los trabajos y sus comunas.");
+    .order("created_at", { ascending: false })
+    .overrideTypes<TrabajoMuroFila[], { merge: false }>();
+  if (error || trabajos === null) {
+    console.warn("Error al consultar el muro:", { code: error?.code });
+    throw new Error(mensajeError);
   }
+  if (trabajos.length === 0) return [];
 
-  if (!trabajos?.length) return [];
-
-  const trabajoIds = trabajos.map(t => t.id);
-  const trabajosConAceptado = new Set<string>();
-
-  const { data: aceptadas, error: errorAceptadas } = await supabase
-    .from("postulaciones")
-    .select("trabajo_id")
-    .in("trabajo_id", trabajoIds)
-    .eq("estado", "aceptado");
-
-  if (errorAceptadas) {
-    throw new Error("No se pudo comprobar el estado de las postulaciones.");
-  }
-
-  aceptadas?.forEach(p => trabajosConAceptado.add(p.trabajo_id));
-
-  const userIds = [...new Set(trabajos.map(t => t.user_id))];
-  const perfilesMap = new Map<string, {
-    nombre: string | null;
-    nombre_completo: string | null;
-    avatar_url: string | null;
-  }>();
-
+  const userIds = Array.from(new Set(trabajos.map((t) => t.user_id)));
   const { data: perfiles, error: errorPerfiles } = await supabase
     .from("perfiles_publicos")
     .select("id, nombre, nombre_completo, avatar_url")
-    .in("id", userIds);
-
-  if (errorPerfiles) {
-    throw new Error("No se pudieron cargar los perfiles de los publicadores.");
+    .in("id", userIds)
+    .overrideTypes<PerfilMuroFila[], { merge: false }>();
+  if (errorPerfiles || perfiles === null) {
+    console.warn("Error al consultar publicadores:", {
+      code: errorPerfiles?.code,
+    });
+    throw new Error(mensajeError);
   }
-
-  perfiles?.forEach(p => perfilesMap.set(p.id, p));
-
-  const misPostulaciones = new Map<string, {
-    id: string;
-    estado: string;
-  }>();
-
+  const perfilesMap = new Map<string, PerfilMuroFila>();
+  perfiles.forEach((perfil) => perfilesMap.set(perfil.id, perfil));
+  const misPostulaciones = new Map<string, { id: string; estado: string }>();
   if (usuarioId) {
     const { data: posts, error: errorPosts } = await supabase
       .from("postulaciones")
       .select("id, trabajo_id, estado")
-      .eq("postulante_id", usuarioId);
-
-    if (errorPosts) {
-      throw new Error("No se pudieron cargar tus postulaciones.");
+      .eq("postulante_id", usuarioId)
+      .in(
+        "trabajo_id",
+        trabajos.map((t) => t.id),
+      )
+      .overrideTypes<PostulacionMuroFila[], { merge: false }>();
+    if (errorPosts || posts === null) {
+      console.warn("Error al consultar postulaciones propias:", {
+        code: errorPosts?.code,
+      });
+      throw new Error(mensajeError);
     }
-
-    posts?.forEach(p => {
-      misPostulaciones.set(p.trabajo_id, {
-        id: p.id,
-        estado: p.estado,
+    posts.forEach((post) => {
+      if (
+        post.estado !== "pendiente" &&
+        post.estado !== "aceptado" &&
+        post.estado !== "rechazado"
+      ) {
+        throw new Error(mensajeError);
+      }
+      misPostulaciones.set(post.trabajo_id, {
+        id: post.id,
+        estado: post.estado,
       });
     });
   }
-
-  return trabajos.map(t => {
+  return trabajos.map((t) => {
     const perfil = perfilesMap.get(t.user_id);
     const comuna = Array.isArray(t.comunas) ? t.comunas[0] : t.comunas;
     const categoria = Array.isArray(t.categorias)
@@ -205,7 +256,8 @@ export const fetchTrabajosMuro = async (
 
     let distanciaKm: number | null = null;
     if (
-      gps && coordsUsuario &&
+      gps &&
+      coordsUsuario &&
       Number.isFinite(coordsUsuario.latitude) &&
       Number.isFinite(coordsUsuario.longitude)
     ) {
@@ -221,11 +273,12 @@ export const fetchTrabajosMuro = async (
     let estado: EstadoTrabajo = "disponible";
 
     if (postulacion) {
-      estado = postulacion.estado === "aceptado"
-        ? "aceptado"
-        : postulacion.estado === "rechazado"
-          ? "rechazado"
-          : "postulado";
+      estado =
+        postulacion.estado === "aceptado"
+          ? "aceptado"
+          : postulacion.estado === "rechazado"
+            ? "rechazado"
+            : "postulado";
     }
 
     return {
@@ -246,7 +299,7 @@ export const fetchTrabajosMuro = async (
       destacado: Boolean(t.destacado),
       estado,
       estadoPublicacionOriginal: t.estado || "disponible",
-      tieneAceptado: trabajosConAceptado.has(t.id) || t.estado === "aceptado",
+      tieneAceptado: t.estado === "aceptado",
       miPostulacionId: postulacion?.id,
       imagenes: Array.isArray(t.imagenes) ? t.imagenes : [],
       fechaPublicacion: t.created_at
@@ -261,95 +314,78 @@ export const fetchTrabajosMuro = async (
 };
 
 export const fetchDetalleSolicitante = async (
-  solicitanteId: string
+  solicitanteId: string,
 ): Promise<SolicitanteDetalle | null> => {
-  try {
-    const { data: perfil, error } = await supabase
-      .from('perfiles_publicos')
-      .select(`
-        id,
-        nombre,
-        nombre_completo,
-        avatar_url,
-        sobre_mi,
-        calificacion,
-        total_resenas,
-        comunas(nombre)
-      `)
-      .eq('id', solicitanteId)
-      .single();
-
-    if (error) {
-      console.warn('Error al consultar perfil del publicador:', {
-        code: error.code,
-        message: error.message,
-      });
-      return null;
-    }
-
-    if (!perfil) return null;
-
-    const {
-      data: resenasData,
-      error: errorResenas,
-    } = await supabase
-      .from('resenas')
-      .select(`
-        id,
-        calificacion,
-        comentario,
-        created_at,
-        perfiles:perfiles_publicos!resenas_autor_id_fkey (
-          nombre,
-          nombre_completo
-        )
-      `)
-      .or(
-        `usuario_evaluado_id.eq.${solicitanteId},evaluado_id.eq.${solicitanteId}`
-      )
-      .order('created_at', { ascending: false })
-      .limit(10);
-
-    if (errorResenas) {
-      console.warn('Error al consultar reseñas del publicador:', {
-        code: errorResenas.code,
-        message: errorResenas.message,
-      });
-      return null;
-    }
-
-    const resenasMapeadas = (resenasData || []).map((r: any) => {
-      const autor = Array.isArray(r.perfiles)
-        ? r.perfiles[0]
-        : r.perfiles;
-
-      return {
-        id: String(r.id),
-        autor: autor?.nombre || autor?.nombre_completo || 'Usuario',
-        calificacion: Number(r.calificacion) || 5,
-        comentario: r.comentario || '',
-      };
-    });
-
-    const comuna = Array.isArray(perfil.comunas)
-      ? perfil.comunas[0]
-      : perfil.comunas;
-
-    return {
-      id: perfil.id,
-      nombre: perfil.nombre || perfil.nombre_completo || 'Usuario',
-      avatarUrl: perfil.avatar_url,
-      comuna: comuna?.nombre || 'Sin comuna',
-      sobreMi: perfil.sobre_mi || 'Sin descripción disponible.',
-      calificacion: Number(perfil.calificacion) || 0,
-      totalResenas:
-        Number(perfil.total_resenas) || resenasMapeadas.length,
-      resenas: resenasMapeadas,
-    };
-  } catch (error) {
-    console.error('Error al cargar detalle del publicador:', error);
-    return null;
+  const mensajeError =
+    "No pudimos cargar el perfil del publicador. Inténtalo nuevamente.";
+  const { data: perfil, error } = await supabase
+    .from("perfiles_publicos")
+    .select(
+      "id, nombre, nombre_completo, avatar_url, sobre_mi, calificacion, total_resenas, comunas(nombre)",
+    )
+    .eq("id", solicitanteId)
+    .maybeSingle()
+    .overrideTypes<PerfilSolicitanteFila, { merge: false }>();
+  if (error) {
+    console.warn("Error al consultar el publicador:", { code: error.code });
+    throw new Error(mensajeError);
   }
+  if (perfil === null) return null;
+  const { data: resenas, error: errorResenas } = await supabase
+    .from("resenas")
+    .select(
+      `id, calificacion, comentario,
+      perfiles:perfiles_publicos!resenas_autor_id_fkey (nombre, nombre_completo)`,
+    )
+    .or(
+      `usuario_evaluado_id.eq.${solicitanteId},evaluado_id.eq.${solicitanteId}`,
+    )
+    .order("created_at", { ascending: false })
+    .limit(10)
+    .overrideTypes<ResenaSolicitanteFila[], { merge: false }>();
+  if (errorResenas || resenas === null) {
+    console.warn("Error al consultar reseñas del publicador:", {
+      code: errorResenas?.code,
+    });
+    throw new Error(mensajeError);
+  }
+  const calificacion = Number(perfil.calificacion ?? 0);
+  const total = perfil.total_resenas ?? 0;
+  if (
+    !Number.isFinite(calificacion) ||
+    calificacion < 0 ||
+    calificacion > 5 ||
+    !Number.isSafeInteger(total) ||
+    total < 0
+  ) {
+    throw new Error(mensajeError);
+  }
+  const comuna = Array.isArray(perfil.comunas)
+    ? perfil.comunas[0]
+    : perfil.comunas;
+  return {
+    id: perfil.id,
+    nombre: perfil.nombre || perfil.nombre_completo || "Usuario",
+    avatarUrl: perfil.avatar_url ?? undefined,
+    comuna: comuna?.nombre || "Sin comuna",
+    sobreMi: perfil.sobre_mi || "Sin descripción disponible.",
+    calificacion,
+    totalResenas: total,
+    resenas: resenas.map((resena) => {
+      const autor = Array.isArray(resena.perfiles)
+        ? resena.perfiles[0]
+        : resena.perfiles;
+      const nota = Number(resena.calificacion);
+      if (!Number.isInteger(nota) || nota < 1 || nota > 5)
+        throw new Error(mensajeError);
+      return {
+        id: resena.id,
+        autor: autor?.nombre || autor?.nombre_completo || "Usuario",
+        calificacion: nota,
+        comentario: resena.comentario,
+      };
+    }),
+  };
 };
 
 export const postularATrabajo = async (
@@ -396,35 +432,30 @@ export const postularATrabajo = async (
 
 export const retirarPostulacion = async (
   trabajoId: string,
-  _postulanteId?: string
+  _postulanteId?: string,
 ) => {
-  const { error } = await supabase.rpc(
-    'retirar_postulacion',
-    {
-      p_trabajo_id: trabajoId,
-    }
-  );
+  const { error } = await supabase.rpc("retirar_postulacion", {
+    p_trabajo_id: trabajoId,
+  });
 
   if (error) {
-    console.warn('Error al retirar postulación:', {
+    console.warn("Error al retirar postulación:", {
       code: error.code,
       message: error.message,
     });
 
-    if (error.code === '42501') {
-      throw new Error(
-        'Debes iniciar sesión para retirar tu postulación.'
-      );
+    if (error.code === "42501") {
+      throw new Error("Debes iniciar sesión para retirar tu postulación.");
     }
 
-    if (error.code === '55000') {
+    if (error.code === "55000") {
       throw new Error(
-        'No puedes retirar esta postulación. Si ya estás asignado, comunícate con el publicador para cancelar el acuerdo.'
+        "No puedes retirar esta postulación. Si ya estás asignado, comunícate con el publicador para cancelar el acuerdo.",
       );
     }
 
     throw new Error(
-      'No pudimos retirar la postulación. Actualiza la tarea y comprueba su estado.'
+      "No pudimos retirar la postulación. Actualiza la tarea y comprueba su estado.",
     );
   }
 
@@ -432,36 +463,31 @@ export const retirarPostulacion = async (
   return { error: null };
 };
 
-export const eliminarTrabajoPropio = async (
-  trabajoId: string
-) => {
-  const { error } = await supabase.rpc(
-    'eliminar_trabajo',
-    {
-      p_trabajo_id: trabajoId,
-    }
-  );
+export const eliminarTrabajoPropio = async (trabajoId: string) => {
+  const { error } = await supabase.rpc("eliminar_trabajo", {
+    p_trabajo_id: trabajoId,
+  });
 
   if (error) {
-    console.warn('Error al eliminar trabajo:', {
+    console.warn("Error al eliminar trabajo:", {
       code: error.code,
       message: error.message,
     });
 
-    if (error.code === '42501') {
+    if (error.code === "42501") {
       throw new Error(
-        'No tienes autorización para eliminar este trabajo o ya no existe.'
+        "No tienes autorización para eliminar este trabajo o ya no existe.",
       );
     }
 
-    if (error.code === '55000') {
+    if (error.code === "55000") {
       throw new Error(
-        'Solo puedes eliminar trabajos disponibles, sin acuerdos activos ni reseñas. Actualiza la publicación antes de continuar.'
+        "Solo puedes eliminar trabajos disponibles, sin acuerdos activos ni reseñas. Actualiza la publicación antes de continuar.",
       );
     }
 
     throw new Error(
-      'No pudimos eliminar el trabajo. Actualiza la lista y comprueba si todavía aparece.'
+      "No pudimos eliminar el trabajo. Actualiza la lista y comprueba si todavía aparece.",
     );
   }
 

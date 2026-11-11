@@ -1,4 +1,6 @@
 import React, { useState, useCallback, useRef } from "react";
+import EstadoListaRemota from "../components/EstadoListaRemota";
+import { useDatosMuro } from "../hooks/useDatosMuro";
 import {
   Text,
   View,
@@ -27,16 +29,10 @@ import {
 } from "../context/FiltrosContext";
 
 import { styles } from "../styles/TrabajosStyles";
-import { supabase } from "../services/supabase";
 import {
   TrabajoUI,
   EstadoTrabajo,
-  CategoriaFiltro,
-  ComunaFiltro,
   SolicitanteDetalle,
-  fetchTrabajosMuro,
-  fetchCategoriasFiltro,
-  fetchComunasFiltro,
   fetchDetalleSolicitante,
   postularATrabajo,
   retirarPostulacion,
@@ -65,10 +61,6 @@ interface AlertaPersonalizada {
 }
 
 export default function TrabajosScreen() {
-  const [usuarioId, setUsuarioId] = useState<string | null>(null);
-  const [trabajos, setTrabajos] = useState<TrabajoUI[]>([]);
-  const [cargando, setCargando] = useState(true);
-  const [refrescando, setRefrescando] = useState(false);
   const [postulandoEnCurso, setPostulandoEnCurso] = useState(false);
 
   const {
@@ -98,6 +90,11 @@ export default function TrabajosScreen() {
   const [solicitanteModal, setSolicitanteModal] =
     useState<SolicitanteDetalle | null>(null);
   const [cargandoSolicitante, setCargandoSolicitante] = useState(false);
+  const [solicitanteIdSeleccionado, setSolicitanteIdSeleccionado] = useState<
+    string | null
+  >(null);
+  const [errorSolicitante, setErrorSolicitante] = useState<string | null>(null);
+  const solicitudSolicitanteRef = useRef(0);
 
   const [modalEditarVisible, setModalEditarVisible] = useState(false);
   const [editTitulo, setEditTitulo] = useState("");
@@ -120,9 +117,6 @@ export default function TrabajosScreen() {
     latitude: number;
     longitude: number;
   } | null>(null);
-
-  const [categorias, setCategorias] = useState<CategoriaFiltro[]>([]);
-  const [comunas, setComunas] = useState<ComunaFiltro[]>([]);
 
   const sliderWidthRef = useRef<number>(260);
   const minPosRef = useRef<number>(0);
@@ -156,37 +150,19 @@ export default function TrabajosScreen() {
     setAlerta((prev) => ({ ...prev, visible: false }));
   };
 
-  const cargarDatos = useCallback(
-    async (coordsOverride?: { latitude: number; longitude: number } | null) => {
-      try {
-        const {
-          data: { user },
-        } = await supabase.auth.getUser();
-        const uid = user ? user.id : null;
-        setUsuarioId(uid);
-
-        const coords =
-          coordsOverride !== undefined
-            ? coordsOverride
-            : coordenadasUsuarioRef.current;
-        const [listaTrabajos, listaCats, listaComs] = await Promise.all([
-          fetchTrabajosMuro(uid, coords),
-          fetchCategoriasFiltro(),
-          fetchComunasFiltro(),
-        ]);
-
-        setTrabajos(listaTrabajos);
-        setCategorias(listaCats);
-        setComunas(listaComs);
-      } catch (err) {
-        console.error("Error al cargar muro de trabajos:", err);
-      } finally {
-        setCargando(false);
-        setRefrescando(false);
-      }
-    },
-    [],
-  );
+  const {
+    usuarioId,
+    trabajos,
+    categorias,
+    comunas,
+    cargando,
+    refrescando,
+    setRefrescando,
+    errorTrabajos,
+    estadoFiltros,
+    errorFiltros,
+    cargarDatos,
+  } = useDatosMuro(coordenadasUsuarioRef);
 
   useFocusEffect(
     useCallback(() => {
@@ -329,9 +305,34 @@ export default function TrabajosScreen() {
       : comunas.find((c) => c.id === comunaSelId)?.nombre || "Comuna";
 
   const handleVerSolicitante = async (solicitanteId: string) => {
+    const solicitud = ++solicitudSolicitanteRef.current;
+    setSolicitanteIdSeleccionado(solicitanteId);
+    setSolicitanteModal(null);
+    setErrorSolicitante(null);
     setCargandoSolicitante(true);
-    const detalle = await fetchDetalleSolicitante(solicitanteId);
-    setSolicitanteModal(detalle);
+    try {
+      const detalle = await fetchDetalleSolicitante(solicitanteId);
+      if (solicitud === solicitudSolicitanteRef.current) {
+        if (detalle) setSolicitanteModal(detalle);
+        else setErrorSolicitante("Este perfil no está disponible.");
+      }
+    } catch {
+      if (solicitud === solicitudSolicitanteRef.current) {
+        setErrorSolicitante(
+          "No pudimos cargar el perfil del publicador. Inténtalo nuevamente.",
+        );
+      }
+    } finally {
+      if (solicitud === solicitudSolicitanteRef.current)
+        setCargandoSolicitante(false);
+    }
+  };
+
+  const cerrarSolicitante = () => {
+    solicitudSolicitanteRef.current += 1;
+    setSolicitanteIdSeleccionado(null);
+    setSolicitanteModal(null);
+    setErrorSolicitante(null);
     setCargandoSolicitante(false);
   };
 
@@ -479,10 +480,7 @@ export default function TrabajosScreen() {
     if (!trabajoSeleccionado) return;
 
     const montoNum = parseInt(editMonto.replace(/[^0-9]/g, ""), 10) || 0;
-    if (
-      editTitulo.trim().length < 6 ||
-      editTitulo.trim().length > 80
-    ) {
+    if (editTitulo.trim().length < 6 || editTitulo.trim().length > 80) {
       dispararAlerta(
         "Validación",
         "El título debe tener entre 6 y 80 caracteres.",
@@ -631,15 +629,15 @@ export default function TrabajosScreen() {
   const hayCapaAbierta =
     trabajoSeleccionado !== null ||
     modalEditarVisible ||
-    solicitanteModal !== null ||
+    solicitanteIdSeleccionado !== null ||
     cargandoSolicitante ||
     modalFiltrosVisible ||
     alerta.visible;
 
   const cerrarCapaSuperior = () => {
     if (alerta.visible) return cerrarAlerta();
-    if (solicitanteModal !== null || cargandoSolicitante)
-      return setSolicitanteModal(null);
+    if (solicitanteIdSeleccionado !== null || cargandoSolicitante)
+      return cerrarSolicitante();
     if (modalEditarVisible) return setModalEditarVisible(false);
     if (modalFiltrosVisible) return setModalFiltrosVisible(false);
     setTrabajoSeleccionado(null);
@@ -697,6 +695,14 @@ export default function TrabajosScreen() {
           color={colors.accentBlue}
           style={{ marginTop: 40 }}
         />
+      ) : errorTrabajos ? (
+        <EstadoListaRemota
+          estado="error"
+          error={errorTrabajos}
+          onReintentar={() => void cargarDatos()}
+        >
+          {null}
+        </EstadoListaRemota>
       ) : (
         <FlatList
           data={trabajosFiltrados}
@@ -1262,17 +1268,44 @@ export default function TrabajosScreen() {
           )}
 
           {/* 6. MODAL PERFIL DEL SOLICITANTE */}
-          {(solicitanteModal !== null || cargandoSolicitante) && (
+          {solicitanteIdSeleccionado !== null && (
             <View style={CAPA_COMPLETA}>
               <Pressable
                 style={styles.dropdownOverlay}
-                onPress={() => setSolicitanteModal(null)}
+                onPress={cerrarSolicitante}
+                accessibilityRole="button"
+                accessibilityLabel="Cerrar perfil del publicador"
               >
                 <Pressable
                   style={styles.solicitanteModalBox}
                   onPress={(e) => e.stopPropagation()}
                 >
-                  {cargandoSolicitante ? (
+                  {errorSolicitante ? (
+                    <View style={{ padding: 16 }}>
+                      <TouchableOpacity
+                        accessibilityRole="button"
+                        onPress={cerrarSolicitante}
+                      >
+                        <Text
+                          style={{
+                            color: colors.textSecondary,
+                            textAlign: "right",
+                          }}
+                        >
+                          Cerrar
+                        </Text>
+                      </TouchableOpacity>
+                      <EstadoListaRemota
+                        estado="error"
+                        error={errorSolicitante}
+                        onReintentar={() =>
+                          void handleVerSolicitante(solicitanteIdSeleccionado)
+                        }
+                      >
+                        {null}
+                      </EstadoListaRemota>
+                    </View>
+                  ) : cargandoSolicitante ? (
                     <ActivityIndicator
                       size="small"
                       color={colors.accentBlue}
@@ -1285,9 +1318,7 @@ export default function TrabajosScreen() {
                           <Text style={styles.dropdownTitle}>
                             Perfil del Solicitante
                           </Text>
-                          <TouchableOpacity
-                            onPress={() => setSolicitanteModal(null)}
-                          >
+                          <TouchableOpacity onPress={cerrarSolicitante}>
                             <Ionicons
                               name="close-circle"
                               size={22}
@@ -1418,6 +1449,15 @@ export default function TrabajosScreen() {
                     showsVerticalScrollIndicator={false}
                     contentContainerStyle={styles.sheetBody}
                   >
+                    {estadoFiltros !== "lista" && (
+                      <EstadoListaRemota
+                        estado={estadoFiltros}
+                        error={errorFiltros}
+                        onReintentar={() => void cargarDatos()}
+                      >
+                        {null}
+                      </EstadoListaRemota>
+                    )}
                     <Text style={styles.filterSectionTitle}>Tipo de tarea</Text>
                     <TouchableOpacity
                       style={styles.dropdownButton}
@@ -1612,87 +1652,101 @@ export default function TrabajosScreen() {
                         </TouchableOpacity>
                       </View>
 
-                      {dropdownVisible === "categoria" ? (
-                        <FlatList
-                          data={[
-                            { id: "todas", nombre: "Todas las categorías" },
-                            ...categorias,
-                          ]}
-                          keyExtractor={(item) => item.id.toString()}
-                          showsVerticalScrollIndicator={false}
-                          renderItem={({ item }) => {
-                            const isSelected = categoriaSelId === item.id;
-                            return (
-                              <TouchableOpacity
-                                style={[
-                                  styles.dropdownItem,
-                                  isSelected && styles.dropdownItemActive,
-                                ]}
-                                onPress={() => {
-                                  setCategoriaSelId(item.id as any);
-                                  setDropdownVisible("ninguno");
-                                }}
-                              >
-                                <Text
+                      <EstadoListaRemota
+                        estado={estadoFiltros}
+                        error={errorFiltros}
+                        onReintentar={() => void cargarDatos()}
+                      >
+                        {dropdownVisible === "categoria" ? (
+                          <FlatList
+                            data={[
+                              {
+                                id: "todas" as const,
+                                nombre: "Todas las categorías",
+                              },
+                              ...categorias,
+                            ]}
+                            keyExtractor={(item) => item.id.toString()}
+                            showsVerticalScrollIndicator={false}
+                            renderItem={({ item }) => {
+                              const isSelected = categoriaSelId === item.id;
+                              return (
+                                <TouchableOpacity
                                   style={[
-                                    styles.dropdownItemText,
-                                    isSelected && styles.dropdownItemTextActive,
+                                    styles.dropdownItem,
+                                    isSelected && styles.dropdownItemActive,
                                   ]}
+                                  onPress={() => {
+                                    setCategoriaSelId(item.id);
+                                    setDropdownVisible("ninguno");
+                                  }}
                                 >
-                                  {item.nombre}
-                                </Text>
-                                {isSelected && (
-                                  <Ionicons
-                                    name="checkmark"
-                                    size={18}
-                                    color={colors.accentBlue}
-                                  />
-                                )}
-                              </TouchableOpacity>
-                            );
-                          }}
-                        />
-                      ) : (
-                        <FlatList
-                          data={[
-                            { id: "todas", nombre: "Todas las comunas" },
-                            ...comunas,
-                          ]}
-                          keyExtractor={(item) => item.id.toString()}
-                          showsVerticalScrollIndicator={false}
-                          renderItem={({ item }) => {
-                            const isSelected = comunaSelId === item.id;
-                            return (
-                              <TouchableOpacity
-                                style={[
-                                  styles.dropdownItem,
-                                  isSelected && styles.dropdownItemActive,
-                                ]}
-                                onPress={() => {
-                                  setComunaSelId(item.id as any);
-                                  setDropdownVisible("ninguno");
-                                }}
-                              >
-                                <Text
+                                  <Text
+                                    style={[
+                                      styles.dropdownItemText,
+                                      isSelected &&
+                                        styles.dropdownItemTextActive,
+                                    ]}
+                                  >
+                                    {item.nombre}
+                                  </Text>
+                                  {isSelected && (
+                                    <Ionicons
+                                      name="checkmark"
+                                      size={18}
+                                      color={colors.accentBlue}
+                                    />
+                                  )}
+                                </TouchableOpacity>
+                              );
+                            }}
+                          />
+                        ) : (
+                          <FlatList
+                            data={[
+                              {
+                                id: "todas" as const,
+                                nombre: "Todas las comunas",
+                              },
+                              ...comunas,
+                            ]}
+                            keyExtractor={(item) => item.id.toString()}
+                            showsVerticalScrollIndicator={false}
+                            renderItem={({ item }) => {
+                              const isSelected = comunaSelId === item.id;
+                              return (
+                                <TouchableOpacity
                                   style={[
-                                    styles.dropdownItemText,
-                                    isSelected && styles.dropdownItemTextActive,
+                                    styles.dropdownItem,
+                                    isSelected && styles.dropdownItemActive,
                                   ]}
+                                  onPress={() => {
+                                    setComunaSelId(item.id);
+                                    setDropdownVisible("ninguno");
+                                  }}
                                 >
-                                  {item.nombre}
-                                </Text>
-                                {isSelected && (
-                                  <Ionicons
-                                    name="checkmark"
-                                    size={18}
-                                    color={colors.accentBlue}
-                                  />
-                                )}
-                              </TouchableOpacity>
-                            );
-                          }}
-                        />
-                      )}
+                                  <Text
+                                    style={[
+                                      styles.dropdownItemText,
+                                      isSelected &&
+                                        styles.dropdownItemTextActive,
+                                    ]}
+                                  >
+                                    {item.nombre}
+                                  </Text>
+                                  {isSelected && (
+                                    <Ionicons
+                                      name="checkmark"
+                                      size={18}
+                                      color={colors.accentBlue}
+                                    />
+                                  )}
+                                </TouchableOpacity>
+                              );
+                            }}
+                          />
+                        )}
+                      </EstadoListaRemota>
                     </Pressable>
                   </Pressable>
                 </View>
