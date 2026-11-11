@@ -110,8 +110,15 @@ export default function PerfilScreen() {
   const solicitudPerfilRef = useRef(0);
   const usuarioPerfilRef = useRef<string | null>(null);
   const [refrescando, setRefrescando] = useState(false);
+  const [cerrandoSesion, setCerrandoSesion] = useState(false);
+  const cierreEnCursoRef = useRef(false);
+  const solicitudCierreRef = useRef(0);
 
-  useEffect(() => () => { solicitudPerfilRef.current += 1; }, []);
+  useEffect(() => () => {
+    solicitudPerfilRef.current += 1;
+    solicitudCierreRef.current += 1;
+    cierreEnCursoRef.current = false;
+  }, []);
 
   const [pagoVisible, setPagoVisible] = useState<{
     paqueteId: string | null;
@@ -249,6 +256,34 @@ export default function PerfilScreen() {
 
   const cerrarAlerta = () => {
     setAlerta((prev) => ({ ...prev, visible: false }));
+  };
+
+  const handleCerrarSesion = async () => {
+    // Bloquear también pulsaciones que lleguen antes del siguiente render.
+    if (cierreEnCursoRef.current) return;
+    cierreEnCursoRef.current = true;
+    const solicitud = ++solicitudCierreRef.current;
+    const vigente = () => solicitud === solicitudCierreRef.current;
+    setCerrandoSesion(true);
+
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
+      // App responde a SIGNED_OUT y desmonta las pantallas de la cuenta.
+    } catch {
+      if (vigente()) {
+        dispararAlerta(
+          "No pudimos cerrar la sesión",
+          "Inténtalo nuevamente. Revisa tu conexión si el problema continúa.",
+          "error",
+        );
+      }
+    } finally {
+      if (vigente()) {
+        cierreEnCursoRef.current = false;
+        setCerrandoSesion(false);
+      }
+    }
   };
 
   const cargarDatos = useCallback(async () => {
@@ -1086,11 +1121,21 @@ export default function PerfilScreen() {
 
         <TouchableOpacity
           activeOpacity={0.8}
-          style={styles.logoutButton}
-          onPress={() => supabase.auth.signOut()}
+          style={[styles.logoutButton, cerrandoSesion && { opacity: 0.6 }]}
+          onPress={() => void handleCerrarSesion()}
+          disabled={cerrandoSesion}
+          accessibilityRole="button"
+          accessibilityLabel={cerrandoSesion ? "Cerrando sesión" : "Cerrar sesión"}
+          accessibilityState={{ disabled: cerrandoSesion, busy: cerrandoSesion }}
         >
-          <Ionicons name="log-out-outline" size={18} color="#ef4444" />
-          <Text style={styles.logoutText}>Cerrar sesión</Text>
+          {cerrandoSesion ? (
+            <ActivityIndicator size="small" color="#ef4444" />
+          ) : (
+            <Ionicons name="log-out-outline" size={18} color="#ef4444" />
+          )}
+          <Text style={styles.logoutText}>
+            {cerrandoSesion ? "Cerrando sesión…" : "Cerrar sesión"}
+          </Text>
         </TouchableOpacity>
       </ScrollView>
 
