@@ -29,13 +29,12 @@ import {
 } from "../context/FiltrosContext";
 
 import { styles } from "../styles/TrabajosStyles";
+import { postularATrabajo, retirarPostulacion } from "../services/postulaciones";
 import {
   TrabajoUI,
   EstadoTrabajo,
   SolicitanteDetalle,
   fetchDetalleSolicitante,
-  postularATrabajo,
-  retirarPostulacion,
   eliminarTrabajoPropio,
   editarTrabajoPropio,
   formatearDistancia,

@@ -38,9 +38,9 @@ import {
 } from "../context/FiltrosContext";
 
 import { styles } from "../styles/MapaStyles";
+import { postularATrabajo } from "../services/postulaciones";
 import {
   TrabajoUI,
-  postularATrabajo,
   formatearDistancia,
 } from "../utils/functionsTrabajos";
 import {
