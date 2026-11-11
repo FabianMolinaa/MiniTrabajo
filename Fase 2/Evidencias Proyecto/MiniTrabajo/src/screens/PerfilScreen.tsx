@@ -11,6 +11,7 @@ import {
   aceptarPostulante,
   type PostulanteBD,
 } from "../services/postulaciones";
+import { enviarCalificacionMutua } from "../services/resenas";
 import HistorialCompras from "../components/HistorialCompras";
 import EstadoListaRemota from "../components/EstadoListaRemota";
 import { useListaRemota } from "../hooks/useListaRemota";
@@ -46,8 +47,6 @@ import {
   fetchPublicacionesUsuario,
   fetchResenasUsuario,
   fetchHistorialTrabajosHechos,
-  finalizarYCalificarTarea,
-  enviarCalificacionMutua,
 } from "../utils/functionsPerfil";
 
 const CAPA_COMPLETA = {
