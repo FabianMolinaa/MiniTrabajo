@@ -3,6 +3,7 @@ import EstadoListaRemota from '../components/EstadoListaRemota';
 import { useListaRemota } from '../hooks/useListaRemota';
 import { fetchCategoriasFiltro, fetchComunasFiltro } from '../services/catalogos';
 import { fetchCreditosPublicar } from '../services/perfiles';
+import { subirImagenTrabajoStorage } from '../services/imagenes';
 import {
   Text,
   View,
@@ -34,7 +35,6 @@ import {
   limpiarMontoChileno,
   formatearMonedaCLP,
   validarFormularioPublicar,
-  subirImagenTrabajoStorage,
   esUbicacionEnRM,
 } from '../utils/functionsPublicar';
 
