@@ -30,13 +30,12 @@ import {
 
 import { styles } from "../styles/TrabajosStyles";
 import { postularATrabajo, retirarPostulacion } from "../services/postulaciones";
+import { eliminarTrabajoPropio, editarTrabajoPropio } from "../services/trabajos";
 import {
   TrabajoUI,
   EstadoTrabajo,
   SolicitanteDetalle,
   fetchDetalleSolicitante,
-  eliminarTrabajoPropio,
-  editarTrabajoPropio,
   formatearDistancia,
 } from "../utils/functionsTrabajos";
 

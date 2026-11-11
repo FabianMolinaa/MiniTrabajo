@@ -565,7 +565,7 @@ export const cancelarAcuerdoTrabajador = async (
   }
 };
 
-export { eliminarTrabajoPropio as eliminarMiPublicacion } from './functionsTrabajos';
+export { eliminarTrabajoPropio as eliminarMiPublicacion } from '../services/trabajos';
 
 export const editarMiPublicacion = async (
   trabajoId: string,
