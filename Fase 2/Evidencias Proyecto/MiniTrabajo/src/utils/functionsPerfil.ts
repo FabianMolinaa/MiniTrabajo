@@ -300,142 +300,153 @@ export const fetchPostulantesDeTarea = async (
   });
 };
 
-export const fetchResenasUsuario = async (
-  userId: string
-): Promise<ResenaItem[]> => {
+interface PerfilResumenFila {
+  id: string;
+  nombre: string | null;
+  nombre_completo: string | null;
+  avatar_url: string | null;
+}
+
+interface ResenaRecibidaFila {
+  id: string;
+  calificacion: number | string;
+  comentario: string;
+  created_at: string;
+  perfiles: PerfilResumenFila | PerfilResumenFila[] | null;
+}
+
+interface TrabajoCompletadoFila {
+  id: string;
+  titulo: string;
+  monto: number;
+  created_at: string;
+  user_id: string;
+  categorias: { nombre: string } | { nombre: string }[] | null;
+}
+
+interface ResenaEnviadaFila {
+  trabajo_id: string | null;
+  calificacion: number | string;
+  comentario: string;
+}
+
+function relacionUnica<T>(relacion: T | T[] | null): T | null {
+  return Array.isArray(relacion) ? relacion[0] ?? null : relacion;
+}
+
+function leerCalificacionResena(valor: number | string): number {
+  const calificacion = Number(valor);
+  if (!Number.isInteger(calificacion) || calificacion < 1 || calificacion > 5) {
+    throw new Error('No pudimos cargar las calificaciones. Inténtalo nuevamente.');
+  }
+  return calificacion;
+}
+
+export const fetchResenasUsuario = async (userId: string): Promise<ResenaItem[]> => {
   const { data, error } = await supabase
     .from('resenas')
     .select(`
-      id,
-      calificacion,
-      comentario,
-      created_at,
+      id, calificacion, comentario, created_at,
       perfiles:perfiles_publicos!resenas_autor_id_fkey (
-        id,
-        nombre,
-        nombre_completo,
-        avatar_url
+        id, nombre, nombre_completo, avatar_url
       )
     `)
-    .or(
-      `usuario_evaluado_id.eq.${userId},evaluado_id.eq.${userId}`
-    )
-    .order('created_at', { ascending: false });
+    .or(`usuario_evaluado_id.eq.${userId},evaluado_id.eq.${userId}`)
+    .order('created_at', { ascending: false })
+    .overrideTypes<ResenaRecibidaFila[], { merge: false }>();
 
   if (error) {
-    console.warn('Error al consultar autores de reseñas:', {
-      code: error.code,
-      message: error.message,
-    });
-    return [];
+    console.warn('Error al consultar reseñas:', { code: error.code });
+    throw new Error('No pudimos cargar las reseñas. Inténtalo nuevamente.');
+  }
+  if (data === null) {
+    throw new Error('No pudimos cargar las reseñas. Inténtalo nuevamente.');
   }
 
-  if (!data) return [];
-
-  return data.map((r: any) => {
-    const autor = Array.isArray(r.perfiles)
-      ? r.perfiles[0]
-      : r.perfiles;
-
+  return data.map(resena => {
+    const autor = relacionUnica(resena.perfiles);
     return {
-      id: String(r.id),
+      id: resena.id,
       autor: autor?.nombre || autor?.nombre_completo || 'Usuario',
       avatarUrl: autor?.avatar_url || null,
-      calificacion: Number(r.calificacion) || 5,
-      fecha: new Date(r.created_at).toLocaleDateString('es-CL'),
-      comentario: r.comentario || '',
+      calificacion: leerCalificacionResena(resena.calificacion),
+      fecha: new Date(resena.created_at).toLocaleDateString('es-CL'),
+      comentario: resena.comentario,
     };
   });
 };
 
-export const fetchHistorialTrabajosHechos = async (userId: string): Promise<TrabajoRealizadoItem[]> => {
-  // 1. Trabajos completados asignados directamente
-  const { data: trabajosDirectos } = await supabase
+export const fetchHistorialTrabajosHechos = async (
+  userId: string
+): Promise<TrabajoRealizadoItem[]> => {
+  const mensajeError = 'No pudimos cargar el historial de trabajos. Inténtalo nuevamente.';
+  const { data: trabajos, error } = await supabase
     .from('trabajos')
     .select('id, titulo, monto, created_at, user_id, categorias(nombre)')
     .eq('trabajador_id', userId)
     .eq('estado', 'completado')
-    .order('created_at', { ascending: false });
+    .order('created_at', { ascending: false })
+    .overrideTypes<TrabajoCompletadoFila[], { merge: false }>();
 
-  // 2. Trabajos completados con postulación aceptada
-  const { data: postsAceptadas } = await supabase
-    .from('postulaciones')
-    .select(`
-      trabajo_id,
-      trabajos (
-        id,
-        titulo,
-        monto,
-        created_at,
-        user_id,
-        estado,
-        categorias(nombre)
-      )
-    `)
-    .eq('postulante_id', userId)
-    .eq('estado', 'aceptado');
+  if (error) {
+    console.warn('Error al consultar trabajos completados:', { code: error.code });
+    throw new Error(mensajeError);
+  }
+  if (trabajos === null) throw new Error(mensajeError);
+  if (trabajos.length === 0) return [];
 
-  const mapaTrabajos = new Map<string, any>();
-  (trabajosDirectos || []).forEach((t: any) => mapaTrabajos.set(t.id, t));
-  (postsAceptadas || []).forEach((p: any) => {
-    if (p.trabajos && p.trabajos.estado === 'completado') {
-      mapaTrabajos.set(p.trabajos.id, p.trabajos);
-    }
-  });
-
-  const listaTrabajos = Array.from(mapaTrabajos.values());
-  if (listaTrabajos.length === 0) return [];
-
-  // Obtener datos de los solicitantes (quienes publicaron el trabajo)
-  const solicitantesIds = Array.from(new Set(listaTrabajos.map((t) => t.user_id).filter(Boolean)));
-  const perfilesMap: Record<string, any> = {};
-
-  if (solicitantesIds.length > 0) {
-    const { data: perfilesData } = await supabase
+  const solicitantesIds = Array.from(new Set(trabajos.map(trabajo => trabajo.user_id)));
+  const trabajoIds = trabajos.map(trabajo => trabajo.id);
+  const [perfilesRes, resenasRes] = await Promise.all([
+    supabase
       .from('perfiles_publicos')
       .select('id, nombre, nombre_completo, avatar_url')
-      .in('id', solicitantesIds);
+      .in('id', solicitantesIds)
+      .overrideTypes<PerfilResumenFila[], { merge: false }>(),
+    supabase
+      .from('resenas')
+      .select('trabajo_id, calificacion, comentario')
+      .eq('autor_id', userId)
+      .in('trabajo_id', trabajoIds)
+      .overrideTypes<ResenaEnviadaFila[], { merge: false }>(),
+  ]);
 
-    if (perfilesData) {
-      perfilesData.forEach((p) => {
-        perfilesMap[p.id] = p;
-      });
-    }
-  }
-
-  // Obtener reseñas que YO (trabajador) he enviado para estos trabajos
-  const trabajoIds = listaTrabajos.map((t) => t.id);
-  const { data: misResenas } = await supabase
-    .from('resenas')
-    .select('trabajo_id, calificacion, comentario')
-    .eq('autor_id', userId)
-    .in('trabajo_id', trabajoIds);
-
-  const resenasMap: Record<string, { calificacion: number; comentario: string }> = {};
-  if (misResenas) {
-    misResenas.forEach((r: any) => {
-      resenasMap[r.trabajo_id] = {
-        calificacion: Number(r.calificacion) || 5,
-        comentario: r.comentario || '',
-      };
+  if (perfilesRes.error || resenasRes.error) {
+    console.warn('Error al completar el historial de trabajos:', {
+      code: perfilesRes.error?.code ?? resenasRes.error?.code,
     });
+    throw new Error(mensajeError);
+  }
+  if (perfilesRes.data === null || resenasRes.data === null) {
+    throw new Error(mensajeError);
   }
 
-  return listaTrabajos.map((t: any) => {
-    const perf = perfilesMap[t.user_id] || {};
-    const res = resenasMap[t.id];
+  const perfilesMap = new Map<string, PerfilResumenFila>();
+  perfilesRes.data.forEach(perfil => perfilesMap.set(perfil.id, perfil));
+  const resenasMap = new Map<string, { calificacion: number; comentario: string }>();
+  resenasRes.data.forEach(resena => {
+    if (resena.trabajo_id === null) throw new Error(mensajeError);
+    resenasMap.set(resena.trabajo_id, {
+      calificacion: leerCalificacionResena(resena.calificacion),
+      comentario: resena.comentario,
+    });
+  });
 
+  return trabajos.map(trabajo => {
+    const perfil = perfilesMap.get(trabajo.user_id);
+    const categoria = relacionUnica(trabajo.categorias);
+    const resena = resenasMap.get(trabajo.id);
     return {
-      id: String(t.id),
-      titulo: t.titulo,
-      categoria: t.categorias?.nombre || 'General',
-      fecha: new Date(t.created_at).toLocaleDateString('es-CL'),
-      monto: `$${Number(t.monto || 0).toLocaleString('es-CL')}`,
-      solicitanteId: t.user_id || '',
-      solicitanteNombre: perf.nombre || perf.nombre_completo || 'Solicitante',
-      solicitanteAvatar: perf.avatar_url || null,
-      calificadoPorMi: Boolean(res),
-      miCalificacion: res || null,
+      id: trabajo.id,
+      titulo: trabajo.titulo,
+      categoria: categoria?.nombre || 'General',
+      fecha: new Date(trabajo.created_at).toLocaleDateString('es-CL'),
+      monto: `$${Number(trabajo.monto).toLocaleString('es-CL')}`,
+      solicitanteId: trabajo.user_id,
+      solicitanteNombre: perfil?.nombre || perfil?.nombre_completo || 'Solicitante',
+      solicitanteAvatar: perfil?.avatar_url || null,
+      calificadoPorMi: Boolean(resena),
+      miCalificacion: resena ?? null,
     };
   });
 };

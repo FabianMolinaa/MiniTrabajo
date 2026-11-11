@@ -2,6 +2,8 @@ import React, { useState, useCallback, useRef } from "react";
 import PagoWebpay from "../components/PagoWebpay";
 import { abrirWhatsAppTrabajo } from "../services/contactos";
 import HistorialCompras from "../components/HistorialCompras";
+import EstadoListaRemota from "../components/EstadoListaRemota";
+import { useListaRemota } from "../hooks/useListaRemota";
 import { useFocusEffect } from "@react-navigation/native";
 import {
   Text,
@@ -124,10 +126,20 @@ export default function PerfilScreen() {
 
   // Listas
   const [misPublicaciones, setMisPublicaciones] = useState<MiPublicacion[]>([]);
-  const [resenasRecibidas, setResenasRecibidas] = useState<ResenaItem[]>([]);
-  const [historialTrabajos, setHistorialTrabajos] = useState<
-    TrabajoRealizadoItem[]
-  >([]);
+  const {
+    datos: resenasRecibidas, estado: estadoResenasRecibidas,
+    error: errorResenasRecibidas, cargar: cargarResenasRecibidas,
+  } = useListaRemota<ResenaItem>(
+    fetchResenasUsuario,
+    "No pudimos cargar tus reseñas. Revisa tu conexión e inténtalo nuevamente.",
+  );
+  const {
+    datos: historialTrabajos, estado: estadoHistorialTrabajos,
+    error: errorHistorialTrabajos, cargar: cargarHistorialTrabajos,
+  } = useListaRemota<TrabajoRealizadoItem>(
+    fetchHistorialTrabajosHechos,
+    "No pudimos cargar tu historial de trabajos. Revisa tu conexión e inténtalo nuevamente.",
+  );
   const [comunasDisponibles, setComunasDisponibles] = useState<ComunaItem[]>(
     [],
   );
@@ -143,10 +155,20 @@ export default function PerfilScreen() {
   const solicitudPostulantesRef = useRef(0);
   const [postulanteDetalle, setPostulanteDetalle] =
     useState<PostulanteBD | null>(null);
-  const [resenasPostulante, setResenasPostulante] = useState<ResenaItem[]>([]);
-  const [historialPostulante, setHistorialPostulante] = useState<
-    TrabajoRealizadoItem[]
-  >([]);
+  const {
+    datos: resenasPostulante, estado: estadoResenasPostulante,
+    error: errorResenasPostulante, cargar: cargarResenasPostulante,
+  } = useListaRemota<ResenaItem>(
+    fetchResenasUsuario,
+    "No pudimos cargar las reseñas del postulante. Inténtalo nuevamente.",
+  );
+  const {
+    datos: historialPostulante, estado: estadoHistorialPostulante,
+    error: errorHistorialPostulante, cargar: cargarHistorialPostulante,
+  } = useListaRemota<TrabajoRealizadoItem>(
+    fetchHistorialTrabajosHechos,
+    "No pudimos cargar el historial del postulante. Inténtalo nuevamente.",
+  );
   const [tabPostulante, setTabPostulante] = useState<"resenas" | "historial">(
     "resenas",
   );
@@ -233,22 +255,20 @@ export default function PerfilScreen() {
       setUsuarioId(user.id);
       setCorreo(user.email || "");
 
-      const [perfilRes, pubsRes, resenasRes, histRes, comunasRes] =
+      const [perfilRes, pubsRes, comunasRes] =
         await Promise.all([
           fetchPerfilUsuario(user.id),
           fetchPublicacionesUsuario(user.id),
-          fetchResenasUsuario(user.id),
-          fetchHistorialTrabajosHechos(user.id),
           supabase
             .from("comunas")
             .select("id, nombre")
             .order("nombre", { ascending: true }),
+          cargarResenasRecibidas(user.id),
+          cargarHistorialTrabajos(user.id),
         ]);
 
       if (perfilRes) setPerfil(perfilRes);
       setMisPublicaciones(pubsRes);
-      setResenasRecibidas(resenasRes);
-      setHistorialTrabajos(histRes);
       if (comunasRes.data) setComunasDisponibles(comunasRes.data);
     } catch (e) {
       console.error("Error al cargar perfil:", e);
@@ -256,7 +276,7 @@ export default function PerfilScreen() {
       setCargandoPerfil(false);
       setRefrescando(false);
     }
-  }, []);
+  }, [cargarResenasRecibidas, cargarHistorialTrabajos]);
 
   useFocusEffect(
     useCallback(() => {
@@ -268,6 +288,14 @@ export default function PerfilScreen() {
     setRefrescando(true);
     cargarDatos();
   }, [cargarDatos]);
+
+  const recargarResenasPropias = () => usuarioId
+    ? cargarResenasRecibidas(usuarioId)
+    : cargarDatos();
+
+  const recargarHistorialPropio = () => usuarioId
+    ? cargarHistorialTrabajos(usuarioId)
+    : cargarDatos();
 
   const handleSeleccionarTarea = async (tarea: MiPublicacion) => {
     const solicitudActual = ++solicitudPostulantesRef.current;
@@ -296,12 +324,10 @@ export default function PerfilScreen() {
   const handleVerPerfilPostulante = async (postulante: PostulanteBD) => {
     setPostulanteDetalle(postulante);
     setTabPostulante("resenas");
-    const [resenas, historial] = await Promise.all([
-      fetchResenasUsuario(postulante.postulante_id),
-      fetchHistorialTrabajosHechos(postulante.postulante_id),
+    await Promise.all([
+      cargarResenasPostulante(postulante.postulante_id),
+      cargarHistorialPostulante(postulante.postulante_id),
     ]);
-    setResenasPostulante(resenas);
-    setHistorialPostulante(historial);
   };
 
   const handleAceptar = async (postulante: PostulanteBD) => {
@@ -917,7 +943,10 @@ export default function PerfilScreen() {
           <TouchableOpacity
             style={styles.statBox}
             activeOpacity={0.7}
-            onPress={() => setModalVisible("resenas")}
+            onPress={() => {
+              setModalVisible("resenas");
+              void recargarResenasPropias();
+            }}
           >
             <View style={styles.ratingRow}>
               <Ionicons
@@ -945,7 +974,10 @@ export default function PerfilScreen() {
           <TouchableOpacity
             style={[styles.statBox, styles.statBorderHorizontal]}
             activeOpacity={0.7}
-            onPress={() => setModalVisible("historial")}
+            onPress={() => {
+              setModalVisible("historial");
+              void recargarHistorialPropio();
+            }}
           >
             <Text style={styles.statValue}>{perfil.trabajos_realizados}</Text>
             <Text style={styles.statLabel}>Trabajos hechos</Text>
@@ -1021,7 +1053,7 @@ export default function PerfilScreen() {
                     <View style={styles.sheetTitleRow}>
                       <Ionicons name="star" size={18} color="#eab308" />
                       <Text style={styles.sheetTitle}>
-                        Reseñas Recibidas ({resenasRecibidas.length})
+                        Reseñas Recibidas ({estadoResenasRecibidas === "lista" ? resenasRecibidas.length : "…"})
                       </Text>
                     </View>
                     <TouchableOpacity
@@ -1036,49 +1068,55 @@ export default function PerfilScreen() {
                     </TouchableOpacity>
                   </View>
                   <ScrollView showsVerticalScrollIndicator={false}>
-                    {resenasRecibidas.length === 0 ? (
-                      <Text style={styles.emptyTabText}>
-                        Aún no has recibido reseñas.
-                      </Text>
-                    ) : (
-                      resenasRecibidas.map((r) => (
-                        <View key={r.id} style={styles.reviewCard}>
-                          <View style={styles.reviewHeader}>
-                            <View style={styles.reviewAuthorRow}>
-                              <View style={styles.reviewAuthorAvatar}>
-                                {r.avatarUrl ? (
-                                  <Image
-                                    source={{ uri: r.avatarUrl }}
-                                    style={{ width: "100%", height: "100%" }}
-                                  />
-                                ) : (
-                                  <Ionicons
-                                    name="person"
-                                    size={12}
-                                    color={colors.textSecondary}
-                                  />
-                                )}
+                    <EstadoListaRemota
+                      estado={estadoResenasRecibidas}
+                      error={errorResenasRecibidas}
+                      onReintentar={() => void recargarResenasPropias()}
+                    >
+                      {resenasRecibidas.length === 0 ? (
+                        <Text style={styles.emptyTabText}>
+                          Aún no has recibido reseñas.
+                        </Text>
+                      ) : (
+                        resenasRecibidas.map((r) => (
+                          <View key={r.id} style={styles.reviewCard}>
+                            <View style={styles.reviewHeader}>
+                              <View style={styles.reviewAuthorRow}>
+                                <View style={styles.reviewAuthorAvatar}>
+                                  {r.avatarUrl ? (
+                                    <Image
+                                      source={{ uri: r.avatarUrl }}
+                                      style={{ width: "100%", height: "100%" }}
+                                    />
+                                  ) : (
+                                    <Ionicons
+                                      name="person"
+                                      size={12}
+                                      color={colors.textSecondary}
+                                    />
+                                  )}
+                                </View>
+                                <Text style={styles.reviewAuthor}>{r.autor}</Text>
                               </View>
-                              <Text style={styles.reviewAuthor}>{r.autor}</Text>
+                              <View style={styles.starsRow}>
+                                {[...Array(r.calificacion)].map((_, i) => (
+                                  <Ionicons
+                                    key={i}
+                                    name="star"
+                                    size={12}
+                                    color="#eab308"
+                                  />
+                                ))}
+                              </View>
                             </View>
-                            <View style={styles.starsRow}>
-                              {[...Array(r.calificacion)].map((_, i) => (
-                                <Ionicons
-                                  key={i}
-                                  name="star"
-                                  size={12}
-                                  color="#eab308"
-                                />
-                              ))}
-                            </View>
+                            <Text style={styles.reviewComment}>
+                              {r.comentario}
+                            </Text>
+                            <Text style={styles.reviewDate}>{r.fecha}</Text>
                           </View>
-                          <Text style={styles.reviewComment}>
-                            {r.comentario}
-                          </Text>
-                          <Text style={styles.reviewDate}>{r.fecha}</Text>
-                        </View>
-                      ))
-                    )}
+                        ))
+                      )}
+                    </EstadoListaRemota>
                   </ScrollView>
                 </View>
               </View>
@@ -1103,7 +1141,7 @@ export default function PerfilScreen() {
                         color={colors.accentBlue}
                       />
                       <Text style={styles.sheetTitle}>
-                        Trabajos Completados ({historialTrabajos.length})
+                        Trabajos Completados ({estadoHistorialTrabajos === "lista" ? historialTrabajos.length : "…"})
                       </Text>
                     </View>
                     <TouchableOpacity
@@ -1118,122 +1156,128 @@ export default function PerfilScreen() {
                     </TouchableOpacity>
                   </View>
                   <ScrollView showsVerticalScrollIndicator={false}>
-                    {historialTrabajos.length === 0 ? (
-                      <View style={styles.emptyApplicantsBox}>
-                        <Ionicons
-                          name="hammer-outline"
-                          size={36}
-                          color={colors.textMuted}
-                        />
-                        <Text style={styles.emptyApplicantsTitle}>
-                          Aún no has completado trabajos
-                        </Text>
-                      </View>
-                    ) : (
-                      historialTrabajos.map((item) => (
-                        <View key={item.id} style={styles.taskCard}>
-                          <View style={styles.taskHeader}>
-                            <View style={styles.badge}>
-                              <Text style={styles.badgeText}>
-                                {item.categoria}
-                              </Text>
-                            </View>
-                            <Text style={styles.taskMonto}>{item.monto}</Text>
-                          </View>
-                          <Text style={styles.taskTitle}>{item.titulo}</Text>
-
-                          {item.solicitanteNombre ? (
-                            <View style={styles.taskContraparteRow}>
-                              <View style={styles.taskContraparteAvatar}>
-                                {item.solicitanteAvatar ? (
-                                  <Image
-                                    source={{ uri: item.solicitanteAvatar }}
-                                    style={{ width: "100%", height: "100%" }}
-                                  />
-                                ) : (
-                                  <Ionicons
-                                    name="person"
-                                    size={12}
-                                    color={colors.textSecondary}
-                                  />
-                                )}
-                              </View>
-                              <Text style={styles.taskContraparteText}>
-                                Publicado por: {item.solicitanteNombre}
-                              </Text>
-                            </View>
-                          ) : null}
-
-                          <View style={styles.taskFooter}>
-                            <Text style={styles.taskDate}>{item.fecha}</Text>
-                            <View
-                              style={{
-                                flexDirection: "row",
-                                alignItems: "center",
-                                gap: 6,
-                              }}
-                            >
-                              {item.calificadoPorMi ? (
-                                <View style={styles.badgeReviewedTag}>
-                                  <Ionicons
-                                    name="star"
-                                    size={12}
-                                    color="#eab308"
-                                  />
-                                  <Text style={styles.badgeReviewedText}>
-                                    Calificaste (
-                                    {item.miCalificacion?.calificacion || 5}★)
-                                  </Text>
-                                </View>
-                              ) : item.solicitanteId ? (
-                                <TouchableOpacity
-                                  style={styles.btnReviewAction}
-                                  activeOpacity={0.7}
-                                  hitSlop={{
-                                    top: 12,
-                                    bottom: 12,
-                                    left: 12,
-                                    right: 12,
-                                  }}
-                                  onPress={() => {
-                                    handleAbrirCalificar(
-                                      {
-                                        trabajoId: item.id,
-                                        evaluadoId: item.solicitanteId,
-                                        nombreContraparte:
-                                          item.solicitanteNombre || "Empleador",
-                                        rolContraparte: "empleador",
-                                        esFinalizacion: false,
-                                      },
-                                      "historial",
-                                    );
-                                  }}
-                                >
-                                  <Ionicons
-                                    name="star"
-                                    size={13}
-                                    color="#eab308"
-                                  />
-                                  <Text style={styles.btnReviewActionText}>
-                                    Calificar empleador
-                                  </Text>
-                                </TouchableOpacity>
-                              ) : null}
-                              <View style={styles.badgeAcceptedTag}>
-                                <Ionicons
-                                  name="checkmark-done"
-                                  size={12}
-                                  color={colors.accentGreen}
-                                />
-                                <Text style={styles.badgeAcceptedText}>
-                                  Completado
+                    <EstadoListaRemota
+                      estado={estadoHistorialTrabajos}
+                      error={errorHistorialTrabajos}
+                      onReintentar={() => void recargarHistorialPropio()}
+                    >
+                      {historialTrabajos.length === 0 ? (
+                        <View style={styles.emptyApplicantsBox}>
+                          <Ionicons
+                            name="hammer-outline"
+                            size={36}
+                            color={colors.textMuted}
+                          />
+                          <Text style={styles.emptyApplicantsTitle}>
+                            Aún no has completado trabajos
+                          </Text>
+                        </View>
+                      ) : (
+                        historialTrabajos.map((item) => (
+                          <View key={item.id} style={styles.taskCard}>
+                            <View style={styles.taskHeader}>
+                              <View style={styles.badge}>
+                                <Text style={styles.badgeText}>
+                                  {item.categoria}
                                 </Text>
                               </View>
+                              <Text style={styles.taskMonto}>{item.monto}</Text>
+                            </View>
+                            <Text style={styles.taskTitle}>{item.titulo}</Text>
+
+                            {item.solicitanteNombre ? (
+                              <View style={styles.taskContraparteRow}>
+                                <View style={styles.taskContraparteAvatar}>
+                                  {item.solicitanteAvatar ? (
+                                    <Image
+                                      source={{ uri: item.solicitanteAvatar }}
+                                      style={{ width: "100%", height: "100%" }}
+                                    />
+                                  ) : (
+                                    <Ionicons
+                                      name="person"
+                                      size={12}
+                                      color={colors.textSecondary}
+                                    />
+                                  )}
+                                </View>
+                                <Text style={styles.taskContraparteText}>
+                                  Publicado por: {item.solicitanteNombre}
+                                </Text>
+                              </View>
+                            ) : null}
+
+                            <View style={styles.taskFooter}>
+                              <Text style={styles.taskDate}>{item.fecha}</Text>
+                              <View
+                                style={{
+                                  flexDirection: "row",
+                                  alignItems: "center",
+                                  gap: 6,
+                                }}
+                              >
+                                {item.calificadoPorMi ? (
+                                  <View style={styles.badgeReviewedTag}>
+                                    <Ionicons
+                                      name="star"
+                                      size={12}
+                                      color="#eab308"
+                                    />
+                                    <Text style={styles.badgeReviewedText}>
+                                      Calificaste (
+                                      {item.miCalificacion?.calificacion || 5}★)
+                                    </Text>
+                                  </View>
+                                ) : item.solicitanteId ? (
+                                  <TouchableOpacity
+                                    style={styles.btnReviewAction}
+                                    activeOpacity={0.7}
+                                    hitSlop={{
+                                      top: 12,
+                                      bottom: 12,
+                                      left: 12,
+                                      right: 12,
+                                    }}
+                                    onPress={() => {
+                                      handleAbrirCalificar(
+                                        {
+                                          trabajoId: item.id,
+                                          evaluadoId: item.solicitanteId,
+                                          nombreContraparte:
+                                            item.solicitanteNombre || "Empleador",
+                                          rolContraparte: "empleador",
+                                          esFinalizacion: false,
+                                        },
+                                        "historial",
+                                      );
+                                    }}
+                                  >
+                                    <Ionicons
+                                      name="star"
+                                      size={13}
+                                      color="#eab308"
+                                    />
+                                    <Text style={styles.btnReviewActionText}>
+                                      Calificar empleador
+                                    </Text>
+                                  </TouchableOpacity>
+                                ) : null}
+                                <View style={styles.badgeAcceptedTag}>
+                                  <Ionicons
+                                    name="checkmark-done"
+                                    size={12}
+                                    color={colors.accentGreen}
+                                  />
+                                  <Text style={styles.badgeAcceptedText}>
+                                    Completado
+                                  </Text>
+                                </View>
+                              </View>
                             </View>
                           </View>
-                        </View>
-                      ))
-                    )}
+                        ))
+                      )}
+                    </EstadoListaRemota>
                   </ScrollView>
                 </View>
               </View>
@@ -2060,7 +2104,7 @@ export default function PerfilScreen() {
                                   styles.miniTabTextActive,
                               ]}
                             >
-                              Reseñas ({resenasPostulante.length})
+                              Reseñas ({estadoResenasPostulante === "lista" ? resenasPostulante.length : "…"})
                             </Text>
                           </View>
                           {tabPostulante === "resenas" && (
@@ -2089,7 +2133,7 @@ export default function PerfilScreen() {
                                   styles.miniTabTextActive,
                               ]}
                             >
-                              Historial ({historialPostulante.length})
+                              Historial ({estadoHistorialPostulante === "lista" ? historialPostulante.length : "…"})
                             </Text>
                           </View>
                           {tabPostulante === "historial" && (
@@ -2102,75 +2146,88 @@ export default function PerfilScreen() {
                         style={styles.tabScrollBox}
                         showsVerticalScrollIndicator={false}
                       >
-                        {tabPostulante === "resenas" ? (
-                          resenasPostulante.length > 0 ? (
-                            resenasPostulante.map((r) => (
-                              <View key={r.id} style={styles.reviewCard}>
-                                <View style={styles.reviewHeader}>
-                                  <View style={styles.reviewAuthorRow}>
-                                    <View style={styles.reviewAuthorAvatar}>
-                                      {r.avatarUrl ? (
-                                        <Image
-                                          source={{ uri: r.avatarUrl }}
-                                          style={{
-                                            width: "100%",
-                                            height: "100%",
-                                          }}
-                                        />
-                                      ) : (
-                                        <Ionicons
-                                          name="person"
-                                          size={12}
-                                          color={colors.textSecondary}
-                                        />
-                                      )}
+                        <EstadoListaRemota
+                          estado={tabPostulante === "resenas" ? estadoResenasPostulante : estadoHistorialPostulante}
+                          error={tabPostulante === "resenas" ? errorResenasPostulante : errorHistorialPostulante}
+                          onReintentar={() => {
+                            if (!postulanteDetalle) return;
+                            if (tabPostulante === "resenas") {
+                              void cargarResenasPostulante(postulanteDetalle.postulante_id);
+                            } else {
+                              void cargarHistorialPostulante(postulanteDetalle.postulante_id);
+                            }
+                          }}
+                        >
+                          {tabPostulante === "resenas" ? (
+                            resenasPostulante.length > 0 ? (
+                              resenasPostulante.map((r) => (
+                                <View key={r.id} style={styles.reviewCard}>
+                                  <View style={styles.reviewHeader}>
+                                    <View style={styles.reviewAuthorRow}>
+                                      <View style={styles.reviewAuthorAvatar}>
+                                        {r.avatarUrl ? (
+                                          <Image
+                                            source={{ uri: r.avatarUrl }}
+                                            style={{
+                                              width: "100%",
+                                              height: "100%",
+                                            }}
+                                          />
+                                        ) : (
+                                          <Ionicons
+                                            name="person"
+                                            size={12}
+                                            color={colors.textSecondary}
+                                          />
+                                        )}
+                                      </View>
+                                      <Text style={styles.reviewAuthor}>
+                                        {r.autor}
+                                      </Text>
                                     </View>
-                                    <Text style={styles.reviewAuthor}>
-                                      {r.autor}
+                                    <View style={styles.starsRow}>
+                                      {[...Array(r.calificacion)].map((_, i) => (
+                                        <Ionicons
+                                          key={i}
+                                          name="star"
+                                          size={11}
+                                          color="#eab308"
+                                        />
+                                      ))}
+                                    </View>
+                                  </View>
+                                  <Text style={styles.reviewComment}>
+                                    {r.comentario}
+                                  </Text>
+                                  <Text style={styles.reviewDate}>{r.fecha}</Text>
+                                </View>
+                              ))
+                            ) : (
+                              <Text style={styles.emptyTabText}>
+                                No cuenta con reseñas registradas.
+                              </Text>
+                            )
+                          ) : historialPostulante.length > 0 ? (
+                            historialPostulante.map((h) => (
+                              <View key={h.id} style={styles.taskCard}>
+                                <View style={styles.taskHeader}>
+                                  <View style={styles.badge}>
+                                    <Text style={styles.badgeText}>
+                                      {h.categoria}
                                     </Text>
                                   </View>
-                                  <View style={styles.starsRow}>
-                                    {[...Array(r.calificacion)].map((_, i) => (
-                                      <Ionicons
-                                        key={i}
-                                        name="star"
-                                        size={11}
-                                        color="#eab308"
-                                      />
-                                    ))}
-                                  </View>
+                                  <Text style={styles.taskMonto}>{h.monto}</Text>
                                 </View>
-                                <Text style={styles.reviewComment}>
-                                  {r.comentario}
-                                </Text>
-                                <Text style={styles.reviewDate}>{r.fecha}</Text>
+                                <Text style={styles.taskTitle}>{h.titulo}</Text>
+                                <Text style={styles.taskDate}>{h.fecha}</Text>
                               </View>
                             ))
                           ) : (
                             <Text style={styles.emptyTabText}>
-                              No cuenta con reseñas registradas.
+                              No registra trabajos previos aún.
                             </Text>
-                          )
-                        ) : historialPostulante.length > 0 ? (
-                          historialPostulante.map((h) => (
-                            <View key={h.id} style={styles.taskCard}>
-                              <View style={styles.taskHeader}>
-                                <View style={styles.badge}>
-                                  <Text style={styles.badgeText}>
-                                    {h.categoria}
-                                  </Text>
-                                </View>
-                                <Text style={styles.taskMonto}>{h.monto}</Text>
-                              </View>
-                              <Text style={styles.taskTitle}>{h.titulo}</Text>
-                              <Text style={styles.taskDate}>{h.fecha}</Text>
-                            </View>
-                          ))
-                        ) : (
-                          <Text style={styles.emptyTabText}>
-                            No registra trabajos previos aún.
-                          </Text>
-                        )}
+                          )}
+                        </EstadoListaRemota>
                       </ScrollView>
                     </>
                   )}
