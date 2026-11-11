@@ -42,7 +42,10 @@ export function useDatosMuro(coordenadasRef: { current: Coordenadas | null }) {
         (async () => {
           try {
             const lista = await fetchTrabajosMuro(user.id, coords);
-            if (vigente()) setTrabajos(lista);
+            if (vigente()) {
+              // Es el estado de la postulación de esta cuenta, no el del trabajo.
+              setTrabajos(lista.filter(trabajo => trabajo.estado !== 'rechazado'));
+            }
           } catch {
             if (vigente()) setErrorTrabajos('No pudimos cargar los trabajos. Revisa tu conexión e inténtalo nuevamente.');
           } finally {
