@@ -25,6 +25,7 @@ import {
   actualizarPerfilPropio,
   type PerfilData,
 } from "../services/perfiles";
+import { subirAvatarStorage } from "../services/imagenes";
 import HistorialCompras from "../components/HistorialCompras";
 import EstadoListaRemota from "../components/EstadoListaRemota";
 import { useListaRemota } from "../hooks/useListaRemota";
@@ -47,7 +48,6 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
-import { decode } from "base64-arraybuffer";
 import { colors } from "../theme/colors";
 import { supabase } from "../services/supabase";
 import { styles } from "../styles/PerfilStyles";
@@ -738,37 +738,6 @@ export default function PerfilScreen() {
       if (result.assets[0].base64) {
         setTempAvatarBase64(result.assets[0].base64);
       }
-    }
-  };
-
-  const subirAvatarStorage = async (
-    base64Data: string,
-    uid: string,
-  ): Promise<string> => {
-    try {
-      const fileName = `${uid}-${Date.now()}.jpg`;
-
-      const { error: uploadError } = await supabase.storage
-        .from("avatars")
-        .upload(fileName, decode(base64Data), {
-          contentType: "image/jpeg",
-          upsert: true,
-        });
-
-      if (uploadError) throw uploadError;
-
-      const { data } = supabase.storage.from("avatars").getPublicUrl(fileName);
-
-      return data.publicUrl;
-    } catch (error: unknown) {
-      console.warn(
-        "Error al subir foto de perfil:",
-        error instanceof Error ? error.message : "Error de almacenamiento",
-      );
-
-      throw new Error(
-        "No pudimos subir tu foto de perfil. Prueba con otra imagen o una de menor tamaño.",
-      );
     }
   };
 
