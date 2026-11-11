@@ -180,3 +180,46 @@ export const retirarPostulacion = async (
   // Mantener la respuesta que espera TrabajosScreen.
   return { error: null };
 };
+
+export const aceptarPostulante = async (
+  trabajoId: string,
+  postulacionId: string,
+  _postulanteId?: string
+) => {
+  const { error } = await supabase.rpc(
+    'aceptar_postulante',
+    {
+      p_trabajo_id: trabajoId,
+      p_postulacion_id: postulacionId,
+    }
+  );
+
+  if (error) {
+    console.warn('Error al aceptar postulante:', {
+      code: error.code,
+      message: error.message,
+    });
+
+    if (error.code === '42501') {
+      throw new Error(
+        'No tienes autorización para aceptar esta postulación.'
+      );
+    }
+
+    if (error.code === '55000') {
+      throw new Error(
+        'El acuerdo cambió o requiere revisión. Actualiza la tarea antes de continuar.'
+      );
+    }
+
+    if (error.code === '22023') {
+      throw new Error(
+        'No puedes aceptarte como trabajador de tu propio trabajo.'
+      );
+    }
+
+    throw new Error(
+      'No pudimos aceptar la postulación. Actualiza la tarea y comprueba su estado.'
+    );
+  }
+};

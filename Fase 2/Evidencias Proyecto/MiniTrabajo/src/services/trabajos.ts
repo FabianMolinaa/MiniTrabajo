@@ -392,3 +392,51 @@ export const editarTrabajoPropio = async (
 
   return { data, error: null };
 };
+
+export const cancelarAcuerdoTrabajador = async (
+  trabajoId: string,
+  trabajadorId?: string | null
+) => {
+  if (!trabajadorId) {
+    throw new Error(
+      'No se identificó al trabajador asignado. Actualiza la tarea antes de cancelar.'
+    );
+  }
+
+  const { error } = await supabase.rpc(
+    'cancelar_acuerdo',
+    {
+      p_trabajo_id: trabajoId,
+      p_trabajador_id: trabajadorId,
+    }
+  );
+
+  if (error) {
+    console.warn('Error al cancelar acuerdo:', {
+      code: error.code,
+      message: error.message,
+    });
+
+    if (error.code === '42501') {
+      throw new Error(
+        'No tienes autorización para cancelar este acuerdo.'
+      );
+    }
+
+    if (error.code === '55000') {
+      throw new Error(
+        'El acuerdo cambió o requiere revisión. Actualiza la tarea antes de continuar.'
+      );
+    }
+
+    if (error.code === '22023') {
+      throw new Error(
+        'No se identificó correctamente el acuerdo que deseas cancelar.'
+      );
+    }
+
+    throw new Error(
+      'No pudimos cancelar el acuerdo. Actualiza la tarea y comprueba su estado.'
+    );
+  }
+};
