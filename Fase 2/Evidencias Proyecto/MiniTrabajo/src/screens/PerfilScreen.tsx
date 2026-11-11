@@ -29,6 +29,7 @@ import {
 import { subirAvatarStorage } from "../services/imagenes";
 import HistorialCompras from "../components/HistorialCompras";
 import EstadoListaRemota from "../components/EstadoListaRemota";
+import AlertaPerfil, { type AlertaPersonalizada } from "../components/AlertaPerfil";
 import { useListaRemota } from "../hooks/useListaRemota";
 import { fetchComunasFiltro } from "../services/catalogos";
 import { useFocusEffect } from "@react-navigation/native";
@@ -72,17 +73,6 @@ export interface CalificacionTarget {
 interface ComunaItem {
   id: number;
   nombre: string;
-}
-
-interface AlertaPersonalizada {
-  visible: boolean;
-  titulo: string;
-  mensaje: string;
-  tipo: "exito" | "error" | "confirmar" | "info";
-  textoConfirmar?: string;
-  textoCancelar?: string;
-  onConfirmar?: () => void;
-  onCancelar?: () => void;
 }
 
 const PAQUETES_CREDITOS = [
@@ -2720,92 +2710,7 @@ export default function PerfilScreen() {
 
           {/* MODAL DE ALERTA PERSONALIZADO (DARK THEME) */}
           {alerta.visible && (
-            <View style={CAPA_COMPLETA}>
-              <View style={styles.subModalOverlay}>
-                <TouchableOpacity
-                  style={styles.subModalBackdropTouch}
-                  activeOpacity={1}
-                  onPress={cerrarAlerta}
-                />
-                <View style={styles.customAlertBox}>
-                  <View
-                    style={[
-                      styles.customAlertIconWrap,
-                      {
-                        backgroundColor:
-                          alerta.tipo === "exito"
-                            ? "rgba(34, 197, 94, 0.15)"
-                            : alerta.tipo === "error"
-                              ? "rgba(239, 68, 68, 0.15)"
-                              : alerta.tipo === "confirmar"
-                                ? "rgba(234, 179, 8, 0.15)"
-                                : "rgba(59, 130, 246, 0.15)",
-                      },
-                    ]}
-                  >
-                    <Ionicons
-                      name={
-                        alerta.tipo === "exito"
-                          ? "checkmark-circle"
-                          : alerta.tipo === "error"
-                            ? "alert-circle"
-                            : alerta.tipo === "confirmar"
-                              ? "help-circle"
-                              : "information-circle"
-                      }
-                      size={32}
-                      color={
-                        alerta.tipo === "exito"
-                          ? colors.accentGreen
-                          : alerta.tipo === "error"
-                            ? "#ef4444"
-                            : alerta.tipo === "confirmar"
-                              ? "#eab308"
-                              : colors.accentBlue
-                      }
-                    />
-                  </View>
-
-                  <Text style={styles.customAlertTitle}>{alerta.titulo}</Text>
-                  <Text style={styles.customAlertMessage}>
-                    {alerta.mensaje}
-                  </Text>
-
-                  <View style={styles.customAlertButtonsRow}>
-                    {alerta.tipo === "confirmar" && (
-                      <TouchableOpacity
-                        style={styles.btnCustomAlertCancel}
-                        onPress={() => {
-                          cerrarAlerta();
-                          if (alerta.onCancelar) alerta.onCancelar();
-                        }}
-                      >
-                        <Text style={styles.btnCustomAlertCancelText}>
-                          {alerta.textoCancelar || "Cancelar"}
-                        </Text>
-                      </TouchableOpacity>
-                    )}
-
-                    <TouchableOpacity
-                      style={[
-                        styles.btnCustomAlertConfirm,
-                        alerta.tipo === "error" && {
-                          backgroundColor: "#ef4444",
-                        },
-                      ]}
-                      onPress={() => {
-                        cerrarAlerta();
-                        if (alerta.onConfirmar) alerta.onConfirmar();
-                      }}
-                    >
-                      <Text style={styles.btnCustomAlertConfirmText}>
-                        {alerta.textoConfirmar || "Entendido"}
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              </View>
-            </View>
+            <AlertaPerfil alerta={alerta} onCerrar={cerrarAlerta} />
           )}
         </View>
       </Modal>
