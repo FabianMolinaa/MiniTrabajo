@@ -2,6 +2,7 @@ import React, { useState, useCallback, useRef, useEffect } from 'react';
 import EstadoListaRemota from '../components/EstadoListaRemota';
 import { useListaRemota } from '../hooks/useListaRemota';
 import { fetchCategoriasFiltro, fetchComunasFiltro } from '../services/catalogos';
+import { fetchCreditosPublicar } from '../services/perfiles';
 import {
   Text,
   View,
@@ -30,7 +31,6 @@ import { solicitarPermisoUbicacionAproximada } from '../services/permisosUbicaci
 import { aproximarUbicacion } from '../utils/ubicacion';
 import {
   COSTO_DESTACAR,
-  fetchCreditosPublicar,
   limpiarMontoChileno,
   formatearMonedaCLP,
   validarFormularioPublicar,
