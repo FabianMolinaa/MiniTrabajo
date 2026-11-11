@@ -4,7 +4,7 @@ import {
   fetchCategoriasFiltro, fetchComunasFiltro,
   type CategoriaFiltro, type ComunaFiltro,
 } from '../services/catalogos';
-import { fetchTrabajosMuro, type TrabajoUI } from '../utils/functionsTrabajos';
+import { fetchTrabajosMuro, type TrabajoUI } from '../services/trabajos';
 import type { EstadoCargaLista } from './useListaRemota';
 
 interface Coordenadas { latitude: number; longitude: number; }

@@ -39,10 +39,8 @@ import {
 
 import { styles } from "../styles/MapaStyles";
 import { postularATrabajo } from "../services/postulaciones";
-import {
-  TrabajoUI,
-  formatearDistancia,
-} from "../utils/functionsTrabajos";
+import type { TrabajoUI } from "../services/trabajos";
+import { formatearDistancia } from "../utils/functionsTrabajos";
 import {
   obtenerCoordenadasTrabajo,
   darkMapStyle,

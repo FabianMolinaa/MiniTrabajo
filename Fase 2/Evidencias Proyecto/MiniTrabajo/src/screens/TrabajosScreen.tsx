@@ -30,14 +30,15 @@ import {
 
 import { styles } from "../styles/TrabajosStyles";
 import { postularATrabajo, retirarPostulacion } from "../services/postulaciones";
-import { eliminarTrabajoPropio, editarTrabajoPropio } from "../services/trabajos";
 import {
-  TrabajoUI,
-  EstadoTrabajo,
-  SolicitanteDetalle,
+  eliminarTrabajoPropio,
+  editarTrabajoPropio,
   fetchDetalleSolicitante,
-  formatearDistancia,
-} from "../utils/functionsTrabajos";
+  type TrabajoUI,
+  type EstadoTrabajo,
+  type SolicitanteDetalle,
+} from "../services/trabajos";
+import { formatearDistancia } from "../utils/functionsTrabajos";
 
 const CAPA_COMPLETA = {
   position: "absolute" as const,
