@@ -67,142 +67,165 @@ export interface PerfilData {
   total_resenas: number;
   trabajos_realizados: number;
   creditos: number;
-  comuna_id: number;
+  comuna_id: number | null;
   comuna_nombre: string;
 }
 
-export const fetchPerfilUsuario = async (userId: string): Promise<PerfilData | null> => {
-  const { data: perfil } = await supabase
-    .from('perfiles')
-    .select('*, comunas(nombre)')
-    .eq('id', userId)
-    .single();
+interface PerfilUsuarioFila {
+  nombre: string;
+  nombre_completo: string | null;
+  sobre_mi: string | null;
+  avatar_url: string | null;
+  calificacion: number | string | null;
+  total_resenas: number | null;
+  trabajos_realizados: number | null;
+  creditos: number | null;
+  comuna_id: number | null;
+  comunas: { nombre: string } | { nombre: string }[] | null;
+}
 
-  if (!perfil) return null;
+interface PublicacionFila {
+  id: string;
+  titulo: string;
+  descripcion: string;
+  monto: number;
+  estado: 'disponible' | 'aceptado' | 'completado';
+  trabajador_id: string | null;
+  imagenes: string[] | null;
+  created_at: string;
+  categorias: { nombre: string } | { nombre: string }[] | null;
+  postulaciones: { id: string; estado: PostulanteBD['estado'] | null; postulante_id: string }[];
+}
 
-  // Calculamos el promedio y conteo real de reseñas para tener el dato más fresco
-  const { data: resenas } = await supabase
-    .from('resenas')
-    .select('calificacion')
-    .or(`usuario_evaluado_id.eq.${userId},evaluado_id.eq.${userId}`);
-
-  let calificacionCalculada = '0.0';
-  let totalResenas = 0;
-
-  if (resenas && resenas.length > 0) {
-    totalResenas = resenas.length;
-    const suma = resenas.reduce((acc, r) => acc + (Number(r.calificacion) || 5), 0);
-    calificacionCalculada = (suma / totalResenas).toFixed(1);
-  } else if (perfil.calificacion != null && Number(perfil.calificacion) > 0) {
-    calificacionCalculada = Number(perfil.calificacion).toFixed(1);
-    totalResenas = Number(perfil.total_resenas) || 0;
+function leerCantidadPerfil(valor: number | null): number {
+  if (valor === null || !Number.isSafeInteger(valor) || valor < 0) {
+    throw new Error('No pudimos cargar los datos de tu perfil. Inténtalo nuevamente.');
   }
+  return valor;
+}
+
+export const fetchPerfilUsuario = async (userId: string): Promise<PerfilData> => {
+  const mensajeError = 'No pudimos cargar tu perfil. Inténtalo nuevamente.';
+  const { data: perfil, error } = await supabase
+    .from('perfiles')
+    .select(`
+      nombre, nombre_completo, sobre_mi, avatar_url,
+      calificacion, total_resenas, trabajos_realizados, creditos,
+      comuna_id, comunas(nombre)
+    `)
+    .eq('id', userId)
+    .maybeSingle()
+    .overrideTypes<PerfilUsuarioFila, { merge: false }>();
+
+  if (error) {
+    console.warn('Error al consultar el perfil propio:', { code: error.code });
+    throw new Error(mensajeError);
+  }
+  if (perfil === null || perfil.calificacion === null) throw new Error(mensajeError);
+  const calificacion = Number(perfil.calificacion);
+  if (!Number.isFinite(calificacion) || calificacion < 0 || calificacion > 5) {
+    throw new Error(mensajeError);
+  }
+  const comuna = relacionUnica(perfil.comunas);
 
   return {
     nombre: perfil.nombre || perfil.nombre_completo || 'Usuario',
     sobre_mi: perfil.sobre_mi || 'Sin descripción aún.',
     avatar_url: perfil.avatar_url,
-    calificacion: calificacionCalculada,
-    total_resenas: totalResenas,
-    trabajos_realizados: perfil.trabajos_realizados || 0,
-    creditos: perfil.creditos ?? 10,
-    comuna_id: perfil.comuna_id || 1,
-    comuna_nombre: perfil.comunas?.nombre || 'Santiago',
+    calificacion: calificacion.toFixed(1),
+    total_resenas: leerCantidadPerfil(perfil.total_resenas),
+    trabajos_realizados: leerCantidadPerfil(perfil.trabajos_realizados),
+    creditos: leerCantidadPerfil(perfil.creditos),
+    comuna_id: perfil.comuna_id,
+    comuna_nombre: comuna?.nombre || 'Sin comuna',
   };
 };
 
 export const fetchPublicacionesUsuario = async (userId: string): Promise<MiPublicacion[]> => {
-  const { data: trabajos } = await supabase
+  const mensajeError = 'No pudimos cargar tus publicaciones. Inténtalo nuevamente.';
+  const { data: trabajos, error } = await supabase
     .from('trabajos')
     .select(`
-      id,
-      titulo,
-      descripcion,
-      monto,
-      estado,
-      trabajador_id,
-      imagenes,
-      created_at,
-      categorias(nombre),
+      id, titulo, descripcion, monto, estado, trabajador_id,
+      imagenes, created_at, categorias(nombre),
       postulaciones(id, estado, postulante_id)
     `)
     .eq('user_id', userId)
-    .order('created_at', { ascending: false });
+    .order('created_at', { ascending: false })
+    .overrideTypes<PublicacionFila[], { merge: false }>();
 
-  if (!trabajos) return [];
+  if (error) {
+    console.warn('Error al consultar publicaciones propias:', { code: error.code });
+    throw new Error(mensajeError);
+  }
+  if (trabajos === null) throw new Error(mensajeError);
+  if (trabajos.length === 0) return [];
 
-  // Obtener IDs de trabajadores asignados
-  const trabajadorIds = Array.from(
-    new Set(
-      trabajos
-        .map((t: any) => {
-          const postAceptada = (t.postulaciones || []).find((p: any) => p.estado === 'aceptado');
-          return t.trabajador_id || postAceptada?.postulante_id || null;
-        })
-        .filter(Boolean)
-    )
-  );
-
-  const perfilesTrabajadores: Record<string, any> = {};
-  if (trabajadorIds.length > 0) {
-    const { data: perfilesData } = await supabase
-      .from('perfiles_publicos')
-      .select('id, nombre, nombre_completo, avatar_url')
-      .in('id', trabajadorIds);
-
-    if (perfilesData) {
-      perfilesData.forEach((p) => {
-        perfilesTrabajadores[p.id] = p;
-      });
+  for (const trabajo of trabajos) {
+    if (
+      !['disponible', 'aceptado', 'completado'].includes(trabajo.estado)
+      || (trabajo.estado === 'disponible') !== (trabajo.trabajador_id === null)
+    ) {
+      throw new Error(mensajeError);
     }
   }
 
-  // Obtener reseñas hechas por mí (empleador) para mis publicaciones completadas
-  const trabajoIds = trabajos.map((t: any) => t.id);
-  const { data: misResenas } = await supabase
-    .from('resenas')
-    .select('trabajo_id, calificacion, comentario')
-    .eq('autor_id', userId)
-    .in('trabajo_id', trabajoIds);
+  const trabajadorIds = Array.from(new Set(
+    trabajos.map(trabajo => trabajo.trabajador_id).filter((id): id is string => id !== null)
+  ));
+  const [perfilesRes, resenasRes] = await Promise.all([
+    trabajadorIds.length > 0
+      ? supabase.from('perfiles_publicos')
+        .select('id, nombre, nombre_completo, avatar_url')
+        .in('id', trabajadorIds)
+        .overrideTypes<PerfilResumenFila[], { merge: false }>()
+      : Promise.resolve({ data: [], error: null }),
+    supabase.from('resenas')
+      .select('trabajo_id, calificacion, comentario')
+      .eq('autor_id', userId)
+      .in('trabajo_id', trabajos.map(trabajo => trabajo.id))
+      .overrideTypes<ResenaEnviadaFila[], { merge: false }>(),
+  ]);
 
-  const resenasMap: Record<string, { calificacion: number; comentario: string }> = {};
-  if (misResenas) {
-    misResenas.forEach((r: any) => {
-      resenasMap[r.trabajo_id] = {
-        calificacion: Number(r.calificacion) || 5,
-        comentario: r.comentario || '',
-      };
+  if (perfilesRes.error || resenasRes.error) {
+    console.warn('Error al completar las publicaciones propias:', {
+      code: perfilesRes.error?.code ?? resenasRes.error?.code,
     });
+    throw new Error(mensajeError);
   }
+  if (perfilesRes.data === null || resenasRes.data === null) throw new Error(mensajeError);
 
-  return trabajos.map((t: any) => {
-    const postAceptada = (t.postulaciones || []).find((p: any) => p.estado === 'aceptado');
-    let estadoCalculado = t.estado;
-    let trabajadorId = t.trabajador_id || postAceptada?.postulante_id || null;
+  const perfilesMap = new Map<string, PerfilResumenFila>();
+  perfilesRes.data.forEach(perfil => perfilesMap.set(perfil.id, perfil));
+  const resenasMap = new Map<string, { calificacion: number; comentario: string }>();
+  resenasRes.data.forEach(resena => {
+    if (resena.trabajo_id === null) throw new Error(mensajeError);
+    resenasMap.set(resena.trabajo_id, {
+      calificacion: leerCalificacionResena(resena.calificacion),
+      comentario: resena.comentario,
+    });
+  });
 
-    if (t.estado !== 'completado') {
-      estadoCalculado = postAceptada || t.estado === 'aceptado' ? 'aceptado' : 'disponible';
-    }
-
-    const perfTrabajador = trabajadorId ? perfilesTrabajadores[trabajadorId] : null;
-    const resena = resenasMap[t.id];
-
+  return trabajos.map(trabajo => {
+    const categoria = relacionUnica(trabajo.categorias);
+    const trabajador = trabajo.trabajador_id ? perfilesMap.get(trabajo.trabajador_id) : null;
+    const resena = resenasMap.get(trabajo.id);
     return {
-      id: String(t.id),
-      titulo: t.titulo,
-      descripcion: t.descripcion || '',
-      categoria: t.categorias?.nombre || 'General',
-      monto: `$${Number(t.monto || 0).toLocaleString('es-CL')}`,
-      montoRaw: Number(t.monto || 0),
-      fecha: new Date(t.created_at).toLocaleDateString('es-CL'),
-      estado: estadoCalculado,
-      trabajador_id: trabajadorId,
-      trabajador_nombre: perfTrabajador ? (perfTrabajador.nombre || perfTrabajador.nombre_completo) : null,
-      trabajador_avatar: perfTrabajador ? perfTrabajador.avatar_url : null,
-      imagenes: Array.isArray(t.imagenes) ? t.imagenes : [],
-      total_postulantes: (t.postulaciones || []).length,
+      id: trabajo.id,
+      titulo: trabajo.titulo,
+      descripcion: trabajo.descripcion,
+      categoria: categoria?.nombre || 'General',
+      monto: `$${Number(trabajo.monto).toLocaleString('es-CL')}`,
+      montoRaw: trabajo.monto,
+      fecha: new Date(trabajo.created_at).toLocaleDateString('es-CL'),
+      estado: trabajo.estado,
+      trabajador_id: trabajo.trabajador_id,
+      trabajador_nombre: trabajador?.nombre || trabajador?.nombre_completo || null,
+      trabajador_avatar: trabajador?.avatar_url || null,
+      imagenes: trabajo.imagenes ?? [],
+      total_postulantes: trabajo.postulaciones.length,
       calificadoPorMi: Boolean(resena),
-      miCalificacion: resena || null,
+      miCalificacion: resena ?? null,
     };
   });
 };

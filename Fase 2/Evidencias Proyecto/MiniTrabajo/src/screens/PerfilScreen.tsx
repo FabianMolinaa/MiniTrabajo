@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from "react";
+import React, { useState, useCallback, useRef, useEffect } from "react";
 import PagoWebpay from "../components/PagoWebpay";
 import { abrirWhatsAppTrabajo } from "../services/contactos";
 import HistorialCompras from "../components/HistorialCompras";
@@ -105,27 +105,28 @@ export default function PerfilScreen() {
   const [usuarioId, setUsuarioId] = useState<string | null>(null);
   const [correo, setCorreo] = useState("");
   const [cargandoPerfil, setCargandoPerfil] = useState(true);
+  const [errorPerfil, setErrorPerfil] = useState<string | null>(null);
+  const solicitudPerfilRef = useRef(0);
+  const usuarioPerfilRef = useRef<string | null>(null);
   const [refrescando, setRefrescando] = useState(false);
+
+  useEffect(() => () => { solicitudPerfilRef.current += 1; }, []);
 
   const [pagoVisible, setPagoVisible] = useState<{
     paqueteId: string | null;
   } | null>(null);
   const [historialComprasVisible, setHistorialComprasVisible] = useState(false);
   // Perfil
-  const [perfil, setPerfil] = useState<PerfilData>({
-    nombre: "Cargando...",
-    sobre_mi: "Sin descripción aún.",
-    avatar_url: null,
-    calificacion: "0.0",
-    total_resenas: 0,
-    trabajos_realizados: 0,
-    creditos: 10,
-    comuna_id: 1,
-    comuna_nombre: "Santiago",
-  });
+  const [perfil, setPerfil] = useState<PerfilData | null>(null);
 
   // Listas
-  const [misPublicaciones, setMisPublicaciones] = useState<MiPublicacion[]>([]);
+  const {
+    datos: misPublicaciones, estado: estadoPublicaciones,
+    error: errorPublicaciones, cargar: cargarPublicaciones,
+  } = useListaRemota<MiPublicacion>(
+    fetchPublicacionesUsuario,
+    "No pudimos cargar tus publicaciones. Revisa tu conexión e inténtalo nuevamente.",
+  );
   const {
     datos: resenasRecibidas, estado: estadoResenasRecibidas,
     error: errorResenasRecibidas, cargar: cargarResenasRecibidas,
@@ -209,7 +210,7 @@ export default function PerfilScreen() {
   const [tempSobreMi, setTempSobreMi] = useState("");
   const [tempAvatarUri, setTempAvatarUri] = useState<string | null>(null);
   const [tempAvatarBase64, setTempAvatarBase64] = useState<string | null>(null);
-  const [tempComunaId, setTempComunaId] = useState<number>(1);
+  const [tempComunaId, setTempComunaId] = useState<number | null>(null);
   const [tempComunaNombre, setTempComunaNombre] = useState("Santiago");
 
   // Alerta Personalizada (Dark Theme)
@@ -246,37 +247,67 @@ export default function PerfilScreen() {
   };
 
   const cargarDatos = useCallback(async () => {
+    const solicitud = ++solicitudPerfilRef.current;
+    const vigente = () => solicitud === solicitudPerfilRef.current;
+    setCargandoPerfil(true);
+    setErrorPerfil(null);
     try {
       const {
         data: { user },
+        error,
       } = await supabase.auth.getUser();
-      if (!user) return;
+      if (!vigente()) return;
+      if (error || !user) throw new Error("No se pudo verificar la sesión.");
+
+      if (usuarioPerfilRef.current !== user.id) {
+        usuarioPerfilRef.current = user.id;
+        setPerfil(null);
+      }
 
       setUsuarioId(user.id);
       setCorreo(user.email || "");
 
-      const [perfilRes, pubsRes, comunasRes] =
-        await Promise.all([
-          fetchPerfilUsuario(user.id),
-          fetchPublicacionesUsuario(user.id),
-          supabase
-            .from("comunas")
-            .select("id, nombre")
-            .order("nombre", { ascending: true }),
-          cargarResenasRecibidas(user.id),
-          cargarHistorialTrabajos(user.id),
-        ]);
+      const perfilPendiente = (async () => {
+        try {
+          const datos = await fetchPerfilUsuario(user.id);
+          if (vigente()) setPerfil(datos);
+        } catch {
+          if (vigente()) {
+            setErrorPerfil("No pudimos cargar tu perfil. Revisa tu conexión e inténtalo nuevamente.");
+          }
+        } finally {
+          if (vigente()) setCargandoPerfil(false);
+        }
+      })();
 
-      if (perfilRes) setPerfil(perfilRes);
-      setMisPublicaciones(pubsRes);
-      if (comunasRes.data) setComunasDisponibles(comunasRes.data);
-    } catch (e) {
-      console.error("Error al cargar perfil:", e);
+      const comunasPendientes = (async () => {
+        const respuesta = await supabase.from("comunas")
+          .select("id, nombre").order("nombre", { ascending: true });
+        if (!vigente()) return;
+        if (respuesta.error) {
+          console.warn("Error al consultar comunas del perfil:", { code: respuesta.error.code });
+        } else if (respuesta.data) {
+          setComunasDisponibles(respuesta.data);
+        }
+      })();
+
+      await Promise.allSettled([
+        perfilPendiente,
+        cargarPublicaciones(user.id),
+        cargarResenasRecibidas(user.id),
+        cargarHistorialTrabajos(user.id),
+        comunasPendientes,
+      ]);
+    } catch {
+      if (vigente()) {
+        setPerfil(null);
+        setErrorPerfil("No pudimos cargar tu perfil. Revisa tu conexión e inténtalo nuevamente.");
+        setCargandoPerfil(false);
+      }
     } finally {
-      setCargandoPerfil(false);
-      setRefrescando(false);
+      if (vigente()) setRefrescando(false);
     }
-  }, [cargarResenasRecibidas, cargarHistorialTrabajos]);
+  }, [cargarPublicaciones, cargarResenasRecibidas, cargarHistorialTrabajos]);
 
   useFocusEffect(
     useCallback(() => {
@@ -295,6 +326,10 @@ export default function PerfilScreen() {
 
   const recargarHistorialPropio = () => usuarioId
     ? cargarHistorialTrabajos(usuarioId)
+    : cargarDatos();
+
+  const recargarPublicacionesPropias = () => usuarioId
+    ? cargarPublicaciones(usuarioId)
     : cargarDatos();
 
   const handleSeleccionarTarea = async (tarea: MiPublicacion) => {
@@ -703,7 +738,11 @@ export default function PerfilScreen() {
   };
 
   const handleGuardarPerfil = async () => {
-    if (!tempNombre.trim() || !usuarioId) {
+    if (!perfil || !usuarioId) {
+      dispararAlerta("Atención", "Vuelve a cargar tu perfil antes de guardar los cambios.", "error");
+      return;
+    }
+    if (!tempNombre.trim()) {
       dispararAlerta("Atención", "El nombre no puede estar vacío.", "error");
       return;
     }
@@ -849,6 +888,24 @@ export default function PerfilScreen() {
       />
     );
   }
+  if (!perfil) {
+    return (
+      <View style={styles.screenWrapper}>
+        <EstadoListaRemota
+          estado={cargandoPerfil ? "cargando" : "error"}
+          error={errorPerfil}
+          onReintentar={() => void cargarDatos()}
+        >
+          {null}
+        </EstadoListaRemota>
+      </View>
+    );
+  }
+
+  const textoSaldo = cargandoPerfil
+    ? "Actualizando saldo…"
+    : errorPerfil ? "Saldo sin actualizar" : `${perfil.creditos} créditos`;
+
   return (
     <View style={styles.screenWrapper}>
       <ScrollView
@@ -864,6 +921,16 @@ export default function PerfilScreen() {
           />
         }
       >
+        {errorPerfil && (
+          <EstadoListaRemota
+            estado="error"
+            error={errorPerfil}
+            onReintentar={() => void cargarDatos()}
+          >
+            {null}
+          </EstadoListaRemota>
+        )}
+
         {/* TARJETA USUARIO */}
         <View style={styles.userCard}>
           <TouchableOpacity
@@ -873,7 +940,7 @@ export default function PerfilScreen() {
           >
             <Ionicons name="sparkles" size={13} color="#eab308" />
             <Text style={styles.creditsPillText}>
-              {perfil.creditos} créditos
+              {textoSaldo}
             </Text>
           </TouchableOpacity>
 
@@ -992,10 +1059,13 @@ export default function PerfilScreen() {
           <TouchableOpacity
             style={styles.statBox}
             activeOpacity={0.7}
-            onPress={() => setModalVisible("publicaciones")}
+            onPress={() => {
+              setModalVisible("publicaciones");
+              void recargarPublicacionesPropias();
+            }}
           >
             <Text style={[styles.statValue, { color: colors.accentBlue }]}>
-              {misPublicaciones.length}
+              {estadoPublicaciones === "lista" ? misPublicaciones.length : "…"}
             </Text>
             <Text style={styles.statLabel}>Publicaciones</Text>
             <Ionicons
@@ -1328,7 +1398,7 @@ export default function PerfilScreen() {
                             styles.pubTabTextActive,
                         ]}
                       >
-                        Activas ({publicacionesActivas.length})
+                        Activas ({estadoPublicaciones === "lista" ? publicacionesActivas.length : "…"})
                       </Text>
                       {tabPublicaciones === "activas" && (
                         <View style={styles.pubActiveIndicator} />
@@ -1346,7 +1416,7 @@ export default function PerfilScreen() {
                             styles.pubTabTextActive,
                         ]}
                       >
-                        Completadas ({publicacionesCompletadas.length})
+                        Completadas ({estadoPublicaciones === "lista" ? publicacionesCompletadas.length : "…"})
                       </Text>
                       {tabPublicaciones === "completadas" && (
                         <View style={styles.pubActiveIndicator} />
@@ -1355,192 +1425,205 @@ export default function PerfilScreen() {
                   </View>
 
                   <ScrollView showsVerticalScrollIndicator={false}>
-                    {(tabPublicaciones === "activas"
-                      ? publicacionesActivas
-                      : publicacionesCompletadas
-                    ).map((tarea) => (
-                      <View key={tarea.id} style={styles.taskCard}>
-                        <TouchableOpacity
-                          activeOpacity={0.7}
-                          onPress={() => handleSeleccionarTarea(tarea)}
-                        >
-                          <View style={styles.taskHeader}>
-                            <View style={styles.headerLeftRow}>
-                              <View style={styles.badge}>
-                                <Text style={styles.badgeText}>
-                                  {tarea.categoria}
-                                </Text>
-                              </View>
-                              {tarea.imagenes && tarea.imagenes.length > 0 && (
-                                <View style={styles.photosBadgeTag}>
-                                  <Ionicons
-                                    name="image-outline"
-                                    size={11}
-                                    color={colors.accentBlue}
-                                  />
-                                  <Text style={styles.photosBadgeText}>
-                                    {tarea.imagenes.length}
+                    <EstadoListaRemota
+                      estado={estadoPublicaciones}
+                      error={errorPublicaciones}
+                      onReintentar={() => void recargarPublicacionesPropias()}
+                    >
+                      {(tabPublicaciones === "activas"
+                        ? publicacionesActivas
+                        : publicacionesCompletadas
+                      ).map((tarea) => (
+                        <View key={tarea.id} style={styles.taskCard}>
+                          <TouchableOpacity
+                            activeOpacity={0.7}
+                            onPress={() => handleSeleccionarTarea(tarea)}
+                          >
+                            <View style={styles.taskHeader}>
+                              <View style={styles.headerLeftRow}>
+                                <View style={styles.badge}>
+                                  <Text style={styles.badgeText}>
+                                    {tarea.categoria}
                                   </Text>
                                 </View>
-                              )}
-                            </View>
-
-                            <View
-                              style={{
-                                flexDirection: "row",
-                                alignItems: "center",
-                              }}
-                            >
-                              <Text style={styles.taskMonto}>
-                                {tarea.monto}
-                              </Text>
-                              {tabPublicaciones === "activas" && (
-                                <TouchableOpacity
-                                  style={styles.btnOptionsTask}
-                                  hitSlop={{
-                                    top: 10,
-                                    bottom: 10,
-                                    left: 10,
-                                    right: 10,
-                                  }}
-                                  onPress={() => {
-                                    handleAbrirOpcionesTarea(tarea);
-                                  }}
-                                >
-                                  <Ionicons
-                                    name="ellipsis-vertical"
-                                    size={18}
-                                    color={colors.textSecondary}
-                                  />
-                                </TouchableOpacity>
-                              )}
-                            </View>
-                          </View>
-
-                          <Text style={styles.taskTitle}>{tarea.titulo}</Text>
-
-                          {tarea.estado === "completado" &&
-                          tarea.trabajador_nombre ? (
-                            <View style={styles.taskContraparteRow}>
-                              <View style={styles.taskContraparteAvatar}>
-                                {tarea.trabajador_avatar ? (
-                                  <Image
-                                    source={{ uri: tarea.trabajador_avatar }}
-                                    style={{ width: "100%", height: "100%" }}
-                                  />
-                                ) : (
-                                  <Ionicons
-                                    name="person"
-                                    size={12}
-                                    color={colors.textSecondary}
-                                  />
+                                {tarea.imagenes && tarea.imagenes.length > 0 && (
+                                  <View style={styles.photosBadgeTag}>
+                                    <Ionicons
+                                      name="image-outline"
+                                      size={11}
+                                      color={colors.accentBlue}
+                                    />
+                                    <Text style={styles.photosBadgeText}>
+                                      {tarea.imagenes.length}
+                                    </Text>
+                                  </View>
                                 )}
                               </View>
-                              <Text style={styles.taskContraparteText}>
-                                Realizado por: {tarea.trabajador_nombre}
-                              </Text>
-                            </View>
-                          ) : null}
-                        </TouchableOpacity>
 
-                        <View style={styles.taskFooter}>
-                          <Text style={styles.taskDate}>{tarea.fecha}</Text>
-                          {tarea.estado === "completado" ? (
-                            <View
-                              style={{
-                                flexDirection: "row",
-                                alignItems: "center",
-                                gap: 6,
-                              }}
-                            >
-                              {tarea.calificadoPorMi ? (
-                                <View style={styles.badgeReviewedTag}>
-                                  <Ionicons
-                                    name="star"
-                                    size={12}
-                                    color="#eab308"
-                                  />
-                                  <Text style={styles.badgeReviewedText}>
-                                    Calificaste (
-                                    {tarea.miCalificacion?.calificacion || 5}★)
-                                  </Text>
-                                </View>
-                              ) : tarea.trabajador_id ? (
-                                <TouchableOpacity
-                                  style={styles.btnReviewAction}
-                                  activeOpacity={0.7}
-                                  hitSlop={{
-                                    top: 12,
-                                    bottom: 12,
-                                    left: 12,
-                                    right: 12,
-                                  }}
-                                  onPress={() => {
-                                    handleAbrirCalificar(
-                                      {
-                                        trabajoId: tarea.id,
-                                        evaluadoId: tarea.trabajador_id!,
-                                        nombreContraparte:
-                                          tarea.trabajador_nombre ||
-                                          "Trabajador",
-                                        rolContraparte: "trabajador",
-                                        esFinalizacion: false,
-                                      },
-                                      "publicaciones",
-                                    );
-                                  }}
-                                >
-                                  <Ionicons
-                                    name="star"
-                                    size={13}
-                                    color="#eab308"
-                                  />
-                                  <Text style={styles.btnReviewActionText}>
-                                    Calificar trabajador
-                                  </Text>
-                                </TouchableOpacity>
-                              ) : null}
-                              <View style={styles.badgeCompletedTag}>
-                                <Ionicons
-                                  name="checkmark-done"
-                                  size={12}
-                                  color={colors.textMuted}
-                                />
-                                <Text style={styles.badgeCompletedText}>
-                                  Completada
+                              <View
+                                style={{
+                                  flexDirection: "row",
+                                  alignItems: "center",
+                                }}
+                              >
+                                <Text style={styles.taskMonto}>
+                                  {tarea.monto}
                                 </Text>
+                                {tabPublicaciones === "activas" && (
+                                  <TouchableOpacity
+                                    style={styles.btnOptionsTask}
+                                    hitSlop={{
+                                      top: 10,
+                                      bottom: 10,
+                                      left: 10,
+                                      right: 10,
+                                    }}
+                                    onPress={() => {
+                                      handleAbrirOpcionesTarea(tarea);
+                                    }}
+                                  >
+                                    <Ionicons
+                                      name="ellipsis-vertical"
+                                      size={18}
+                                      color={colors.textSecondary}
+                                    />
+                                  </TouchableOpacity>
+                                )}
                               </View>
                             </View>
-                          ) : tarea.estado === "aceptado" ? (
-                            <View style={styles.badgeAcceptedTag}>
-                              <Ionicons
-                                name="play"
-                                size={11}
-                                color={colors.accentGreen}
-                              />
-                              <Text style={styles.badgeAcceptedText}>
-                                En curso
+
+                            <Text style={styles.taskTitle}>{tarea.titulo}</Text>
+
+                            {tarea.estado === "completado" &&
+                            tarea.trabajador_nombre ? (
+                              <View style={styles.taskContraparteRow}>
+                                <View style={styles.taskContraparteAvatar}>
+                                  {tarea.trabajador_avatar ? (
+                                    <Image
+                                      source={{ uri: tarea.trabajador_avatar }}
+                                      style={{ width: "100%", height: "100%" }}
+                                    />
+                                  ) : (
+                                    <Ionicons
+                                      name="person"
+                                      size={12}
+                                      color={colors.textSecondary}
+                                    />
+                                  )}
+                                </View>
+                                <Text style={styles.taskContraparteText}>
+                                  Realizado por: {tarea.trabajador_nombre}
+                                </Text>
+                              </View>
+                            ) : null}
+                          </TouchableOpacity>
+
+                          <View style={styles.taskFooter}>
+                            <Text style={styles.taskDate}>{tarea.fecha}</Text>
+                            {tarea.estado === "completado" ? (
+                              <View
+                                style={{
+                                  flexDirection: "row",
+                                  alignItems: "center",
+                                  gap: 6,
+                                }}
+                              >
+                                {tarea.calificadoPorMi ? (
+                                  <View style={styles.badgeReviewedTag}>
+                                    <Ionicons
+                                      name="star"
+                                      size={12}
+                                      color="#eab308"
+                                    />
+                                    <Text style={styles.badgeReviewedText}>
+                                      Calificaste (
+                                      {tarea.miCalificacion?.calificacion || 5}★)
+                                    </Text>
+                                  </View>
+                                ) : tarea.trabajador_id ? (
+                                  <TouchableOpacity
+                                    style={styles.btnReviewAction}
+                                    activeOpacity={0.7}
+                                    hitSlop={{
+                                      top: 12,
+                                      bottom: 12,
+                                      left: 12,
+                                      right: 12,
+                                    }}
+                                    onPress={() => {
+                                      handleAbrirCalificar(
+                                        {
+                                          trabajoId: tarea.id,
+                                          evaluadoId: tarea.trabajador_id!,
+                                          nombreContraparte:
+                                            tarea.trabajador_nombre ||
+                                            "Trabajador",
+                                          rolContraparte: "trabajador",
+                                          esFinalizacion: false,
+                                        },
+                                        "publicaciones",
+                                      );
+                                    }}
+                                  >
+                                    <Ionicons
+                                      name="star"
+                                      size={13}
+                                      color="#eab308"
+                                    />
+                                    <Text style={styles.btnReviewActionText}>
+                                      Calificar trabajador
+                                    </Text>
+                                  </TouchableOpacity>
+                                ) : null}
+                                <View style={styles.badgeCompletedTag}>
+                                  <Ionicons
+                                    name="checkmark-done"
+                                    size={12}
+                                    color={colors.textMuted}
+                                  />
+                                  <Text style={styles.badgeCompletedText}>
+                                    Completada
+                                  </Text>
+                                </View>
+                              </View>
+                            ) : tarea.estado === "aceptado" ? (
+                              <View style={styles.badgeAcceptedTag}>
+                                <Ionicons
+                                  name="play"
+                                  size={11}
+                                  color={colors.accentGreen}
+                                />
+                                <Text style={styles.badgeAcceptedText}>
+                                  En curso
+                                </Text>
+                              </View>
+                            ) : (tarea.total_postulantes || 0) > 0 ? (
+                              <View style={styles.badgeApplicantsTag}>
+                                <Ionicons
+                                  name="people"
+                                  size={12}
+                                  color={colors.accentBlue}
+                                />
+                                <Text style={styles.badgeApplicantsText}>
+                                  {tarea.total_postulantes} postulante(s)
+                                </Text>
+                              </View>
+                            ) : (
+                              <Text style={styles.noApplicantsText}>
+                                Sin postulantes
                               </Text>
-                            </View>
-                          ) : (tarea.total_postulantes || 0) > 0 ? (
-                            <View style={styles.badgeApplicantsTag}>
-                              <Ionicons
-                                name="people"
-                                size={12}
-                                color={colors.accentBlue}
-                              />
-                              <Text style={styles.badgeApplicantsText}>
-                                {tarea.total_postulantes} postulante(s)
-                              </Text>
-                            </View>
-                          ) : (
-                            <Text style={styles.noApplicantsText}>
-                              Sin postulantes
-                            </Text>
-                          )}
+                            )}
+                          </View>
                         </View>
-                      </View>
-                    ))}
+                      ))}
+                      {(tabPublicaciones === "activas" ? publicacionesActivas : publicacionesCompletadas).length === 0 && (
+                        <Text style={styles.emptyTabText}>
+                          {tabPublicaciones === "activas"
+                            ? "Aún no tienes publicaciones activas."
+                            : "Aún no tienes publicaciones completadas."}
+                        </Text>
+                      )}
+                    </EstadoListaRemota>
                   </ScrollView>
                 </View>
               </View>
@@ -2588,7 +2671,7 @@ export default function PerfilScreen() {
                   <View style={styles.balanceCard}>
                     <Text style={styles.balanceLabel}>Saldo disponible</Text>
                     <Text style={styles.balanceNumber}>
-                      {perfil.creditos} créditos
+                      {textoSaldo}
                     </Text>
                     <Text style={styles.balanceSubtext}>
                       Usa créditos para destacar tus ofertas en la comunidad.
