@@ -565,38 +565,6 @@ export const cancelarAcuerdoTrabajador = async (
   }
 };
 
-export { eliminarTrabajoPropio as eliminarMiPublicacion } from '../services/trabajos';
-
-export const editarMiPublicacion = async (
-  trabajoId: string,
-  datos: { titulo: string; descripcion: string; monto: number }
-) => {
-  const { data: aceptadas } = await supabase
-    .from('postulaciones')
-    .select('id')
-    .eq('trabajo_id', trabajoId)
-    .eq('estado', 'aceptado');
-
-  if (aceptadas && aceptadas.length > 0) {
-    throw new Error('No puedes editar una tarea que ya cuenta con un trabajador aceptado.');
-  }
-
-  const { data, error } = await supabase
-    .from('trabajos')
-    .update({
-      titulo: datos.titulo.trim(),
-      descripcion: datos.descripcion.trim(),
-      monto: datos.monto,
-    })
-    .eq('id', trabajoId)
-    .select();
-
-  if (error) throw error;
-  if (!data || data.length === 0) {
-    throw new Error('No se pudo guardar la edición.');
-  }
-};
-
 /**
  * Función universal para calificar a una contraparte (de empleador a trabajador, o de trabajador a empleador).
  * Recalcula el promedio del usuario evaluado e incrementa trabajos completados si aplica.

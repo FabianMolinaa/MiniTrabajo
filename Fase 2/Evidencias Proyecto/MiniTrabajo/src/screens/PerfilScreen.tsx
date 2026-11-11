@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useRef, useEffect } from "react";
 import PagoWebpay from "../components/PagoWebpay";
 import { abrirWhatsAppTrabajo } from "../services/contactos";
+import { editarTrabajoPropio, eliminarTrabajoPropio } from "../services/trabajos";
 import HistorialCompras from "../components/HistorialCompras";
 import EstadoListaRemota from "../components/EstadoListaRemota";
 import { useListaRemota } from "../hooks/useListaRemota";
@@ -40,8 +41,6 @@ import {
   fetchHistorialTrabajosHechos,
   aceptarPostulante,
   cancelarAcuerdoTrabajador,
-  editarMiPublicacion,
-  eliminarMiPublicacion,
   finalizarYCalificarTarea,
   enviarCalificacionMutua,
 } from "../utils/functionsPerfil";
@@ -564,7 +563,7 @@ export default function PerfilScreen() {
 
     setGuardandoEdicionTarea(true);
     try {
-      await editarMiPublicacion(tareaOpciones.id, {
+      await editarTrabajoPropio(tareaOpciones.id, {
         titulo: editTituloTarea,
         descripcion: editDescripcionTarea,
         monto: montoNum,
@@ -598,7 +597,7 @@ export default function PerfilScreen() {
       "confirmar",
       async () => {
         try {
-          await eliminarMiPublicacion(tareaOpciones.id);
+          await eliminarTrabajoPropio(tareaOpciones.id);
           setTareaOpciones(null);
           await cargarDatos();
           dispararAlerta(
