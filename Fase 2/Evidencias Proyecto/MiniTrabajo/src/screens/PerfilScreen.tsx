@@ -6,7 +6,9 @@ import {
   eliminarTrabajoPropio,
   cancelarAcuerdoTrabajador,
   fetchPublicacionesUsuario,
+  fetchHistorialTrabajosHechos,
   type MiPublicacion,
+  type TrabajoRealizadoItem,
 } from "../services/trabajos";
 import {
   fetchPostulantesDeTarea,
@@ -45,10 +47,6 @@ import { decode } from "base64-arraybuffer";
 import { colors } from "../theme/colors";
 import { supabase } from "../services/supabase";
 import { styles } from "../styles/PerfilStyles";
-import {
-  TrabajoRealizadoItem,
-  fetchHistorialTrabajosHechos,
-} from "../utils/functionsPerfil";
 
 const CAPA_COMPLETA = {
   position: "absolute" as const,
