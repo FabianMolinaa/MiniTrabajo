@@ -2,6 +2,7 @@ import React, { useState, useCallback, useRef, useEffect } from "react";
 import PagoWebpay from "../components/PagoWebpay";
 import { abrirWhatsAppTrabajo } from "../services/contactos";
 import { editarTrabajoPropio, eliminarTrabajoPropio } from "../services/trabajos";
+import { fetchPostulantesDeTarea, type PostulanteBD } from "../services/postulaciones";
 import HistorialCompras from "../components/HistorialCompras";
 import EstadoListaRemota from "../components/EstadoListaRemota";
 import { useListaRemota } from "../hooks/useListaRemota";
@@ -31,12 +32,10 @@ import { styles } from "../styles/PerfilStyles";
 import {
   ResenaItem,
   TrabajoRealizadoItem,
-  PostulanteBD,
   MiPublicacion,
   PerfilData,
   fetchPerfilUsuario,
   fetchPublicacionesUsuario,
-  fetchPostulantesDeTarea,
   fetchResenasUsuario,
   fetchHistorialTrabajosHechos,
   aceptarPostulante,

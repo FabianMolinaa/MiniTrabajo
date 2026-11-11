@@ -1,5 +1,111 @@
 import { supabase } from "./supabase";
 
+export interface PostulanteBD {
+  id: string;
+  postulante_id: string;
+  nombre: string;
+  avatar_url?: string | null;
+  comuna: string;
+  sobre_mi: string;
+  calificacion: string;
+  trabajos_realizados: number;
+  mensaje: string;
+  estado: 'pendiente' | 'aceptado' | 'rechazado';
+}
+
+interface PostulacionFila {
+  id: string;
+  postulante_id: string;
+  mensaje: string;
+  estado: PostulanteBD['estado'] | null;
+}
+
+interface PerfilPostulanteFila {
+  id: string;
+  nombre: string | null;
+  nombre_completo: string | null;
+  avatar_url: string | null;
+  comunas: { nombre: string } | { nombre: string }[] | null;
+  sobre_mi: string | null;
+  calificacion: number | string | null;
+  trabajos_realizados: number | null;
+}
+
+export const fetchPostulantesDeTarea = async (
+  trabajoId: string
+): Promise<PostulanteBD[]> => {
+  const mensajeError = 'No pudimos cargar los postulantes. Inténtalo nuevamente.';
+
+  const { data: posts, error } = await supabase
+    .from('postulaciones')
+    .select('id, postulante_id, mensaje, estado')
+    .eq('trabajo_id', trabajoId)
+    .order('created_at', { ascending: false })
+    .overrideTypes<PostulacionFila[], { merge: false }>();
+
+  if (error) {
+    console.warn('Error al consultar postulaciones:', { code: error.code });
+    throw new Error(mensajeError);
+  }
+  if (posts === null) throw new Error(mensajeError);
+  if (posts.length === 0) return [];
+
+  const postulantesIds = Array.from(new Set(posts.map(p => p.postulante_id)));
+  const { data: perfilesData, error: errorPerfiles } = await supabase
+    .from('perfiles_publicos')
+    .select(`
+      id,
+      nombre,
+      nombre_completo,
+      avatar_url,
+      comunas(nombre),
+      sobre_mi,
+      calificacion,
+      trabajos_realizados
+    `)
+    .in('id', postulantesIds)
+    .overrideTypes<PerfilPostulanteFila[], { merge: false }>();
+
+  if (errorPerfiles) {
+    console.warn('Error al consultar perfiles públicos de postulantes:', {
+      code: errorPerfiles.code,
+    });
+    throw new Error(mensajeError);
+  }
+  if (perfilesData === null) throw new Error(mensajeError);
+
+  const perfilesMap = new Map<string, PerfilPostulanteFila>();
+  perfilesData.forEach(perfil => perfilesMap.set(perfil.id, perfil));
+
+  return posts.map(post => {
+    const estado = post.estado;
+    if (estado !== 'pendiente' && estado !== 'aceptado' && estado !== 'rechazado') {
+      throw new Error(mensajeError);
+    }
+
+    const perfil = perfilesMap.get(post.postulante_id);
+    const comuna = Array.isArray(perfil?.comunas)
+      ? perfil.comunas[0]
+      : perfil?.comunas;
+    const calificacion = Number(perfil?.calificacion ?? 0);
+    const calificacionValida = Number.isFinite(calificacion)
+      && calificacion >= 0 && calificacion <= 5;
+
+    return {
+      id: post.id,
+      postulante_id: post.postulante_id,
+      nombre: perfil?.nombre || perfil?.nombre_completo || 'Postulante',
+      avatar_url: perfil?.avatar_url || null,
+      comuna: comuna?.nombre || 'Sin comuna',
+      sobre_mi: perfil?.sobre_mi || 'Sin descripción',
+      calificacion: (calificacionValida ? calificacion : 0).toFixed(1),
+      trabajos_realizados: perfil?.trabajos_realizados ?? 0,
+      mensaje: post.mensaje,
+      estado,
+    };
+  });
+};
+
 export const postularATrabajo = async (
   trabajoId: string,
   postulanteId: string,
