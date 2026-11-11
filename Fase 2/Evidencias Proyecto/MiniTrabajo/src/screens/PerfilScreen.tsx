@@ -13,6 +13,7 @@ import {
 import {
   fetchPostulantesDeTarea,
   aceptarPostulante,
+  rechazarPostulacion,
   type PostulanteBD,
 } from "../services/postulaciones";
 import {
@@ -432,32 +433,7 @@ export default function PerfilScreen() {
 
   const handleRechazar = async (postulacionId: string) => {
     try {
-      const { error } = await supabase.rpc("rechazar_postulacion", {
-        p_postulacion_id: postulacionId,
-      });
-
-      if (error) {
-        console.warn("Error al rechazar postulación:", {
-          code: error.code,
-          message: error.message,
-        });
-
-        if (error.code === "42501") {
-          throw new Error(
-            "No tienes autorización para rechazar esta postulación.",
-          );
-        }
-
-        if (error.code === "55000") {
-          throw new Error(
-            "La postulación cambió o ya no permite el rechazo. Actualiza la tarea. Si el trabajador está aceptado, utiliza Cancelar acuerdo.",
-          );
-        }
-
-        throw new Error(
-          "No pudimos rechazar la postulación. Actualiza la tarea antes de volver a intentarlo.",
-        );
-      }
+      await rechazarPostulacion(postulacionId);
 
       setPostulantesDeTarea((prev) =>
         prev.map((p) =>
