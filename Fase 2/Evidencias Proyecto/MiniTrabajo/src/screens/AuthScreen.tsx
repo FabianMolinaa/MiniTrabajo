@@ -231,50 +231,12 @@ export default function AuthScreen() {
       return;
     }
 
-    const telefonoEstandarizado = estandarizarTelefonoChileno(telefono);
-    const rutFormateado = formatearRutFinal(rutLimpio);
-
-    setCargando(true);
-    try {
-      const { data: existencia, error: rpcError } = await supabase.rpc('check_user_exists', {
-        p_rut: rutFormateado,
-        p_telefono: telefonoEstandarizado,
-        p_email: emailNormalizado,
-      });
-
-      setCargando(false);
-
-      if (!rpcError && existencia) {
-        const erroresDup: ErroresCampos = {};
-        if (existencia.rut) erroresDup.rut = 'Este RUT ya tiene una cuenta asociada';
-        if (existencia.telefono) erroresDup.telefono = 'Este teléfono ya está registrado';
-        if (existencia.email) erroresDup.email = 'Este correo ya está en uso';
-
-        if (Object.keys(erroresDup).length > 0) {
-          setErrores(erroresDup);
-          setModalFeedback({
-            visible: true,
-            tipo: 'error',
-            titulo: 'Datos en uso',
-            mensaje: 'Algunos datos ya pertenecen a otra cuenta de Mini-Trabajo.',
-          });
-          return;
-        }
-      }
-
-      setTipoOperacionPin('registro');
-      setPinIngresado('');
-      setErrorPin(null);
-      setModalPinVisible(true);
-    } catch {
-      setCargando(false);
-      setModalFeedback({
-        visible: true,
-        tipo: 'error',
-        titulo: 'Error de conexión',
-        mensaje: 'No pudimos conectar con los servidores. Intenta nuevamente.',
-      });
-    }
+    // La base de datos valida la unicidad al crear la cuenta.
+    // No consultamos si los datos pertenecen a otra persona.
+    setTipoOperacionPin('registro');
+    setPinIngresado('');
+    setErrorPin(null);
+    setModalPinVisible(true);
   };
 
   // 3. CONFIRMAR PIN
@@ -330,9 +292,7 @@ export default function AuthScreen() {
           visible: true,
           tipo: 'error',
           titulo: 'No se pudo crear la cuenta',
-          mensaje: signUpError.message.includes('Database error')
-            ? 'Ya existe un usuario con este correo, RUT o teléfono.'
-            : signUpError.message,
+          mensaje: 'No pudimos completar el registro. Revisa tus datos o intenta recuperar el acceso si ya tienes una cuenta.',
         });
       } else {
         setModalPinVisible(false);
@@ -702,7 +662,7 @@ export default function AuthScreen() {
             <Text style={styles.feedbackTitle}>Verificación en 2 Pasos</Text>
             <Text style={styles.feedbackMsg}>
               {tipoOperacionPin === 'registro'
-                ? 'Datos correctos. Ingresa tu código PIN de seguridad (6 dígitos) para confirmar la creación de tu cuenta.'
+                ? 'Los campos tienen un formato válido. Ingresa el PIN de prueba (6 dígitos) para solicitar la creación de tu cuenta.'
                 : 'Credenciales correctas. Ingresa tu código PIN de seguridad (6 dígitos) para completar el inicio de sesión.'}
             </Text>
 
