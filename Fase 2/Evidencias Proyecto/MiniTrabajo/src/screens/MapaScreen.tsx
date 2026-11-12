@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import EstadoListaRemota from "../components/EstadoListaRemota";
 import { useDatosMuro } from "../hooks/useDatosMuro";
 import {
@@ -12,8 +12,6 @@ import {
   Alert,
   ActivityIndicator,
   Animated,
-  Linking,
-  Platform,
   FlatList,
   Pressable,
   PanResponder,
