@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from "react";
+import React, { useState, useCallback, useRef, useEffect } from "react";
 import EstadoListaRemota from "../components/EstadoListaRemota";
 import { useDatosMuro } from "../hooks/useDatosMuro";
 import {
@@ -29,17 +29,16 @@ import {
 } from "../context/FiltrosContext";
 
 import { styles } from "../styles/TrabajosStyles";
+import { postularATrabajo, retirarPostulacion } from "../services/postulaciones";
 import {
-  TrabajoUI,
-  EstadoTrabajo,
-  SolicitanteDetalle,
-  fetchDetalleSolicitante,
-  postularATrabajo,
-  retirarPostulacion,
   eliminarTrabajoPropio,
   editarTrabajoPropio,
-  formatearDistancia,
-} from "../utils/functionsTrabajos";
+  fetchDetalleSolicitante,
+  type TrabajoUI,
+  type EstadoTrabajo,
+  type SolicitanteDetalle,
+} from "../services/trabajos";
+import { formatearDistancia } from "../utils/functionsTrabajos";
 
 const CAPA_COMPLETA = {
   position: "absolute" as const,
@@ -163,6 +162,20 @@ export default function TrabajosScreen() {
     errorFiltros,
     cargarDatos,
   } = useDatosMuro(coordenadasUsuarioRef);
+
+  useEffect(() => {
+    if (cargando || errorTrabajos || !trabajoSeleccionado) return;
+    if (trabajos.some(trabajo => trabajo.id === trabajoSeleccionado.id)) return;
+
+    // Cerrar también un detalle que quedó abierto antes de actualizar la lista.
+    solicitudSolicitanteRef.current += 1;
+    setTrabajoSeleccionado(null);
+    setModalEditarVisible(false);
+    setSolicitanteIdSeleccionado(null);
+    setSolicitanteModal(null);
+    setErrorSolicitante(null);
+    setCargandoSolicitante(false);
+  }, [cargando, errorTrabajos, trabajos, trabajoSeleccionado]);
 
   useFocusEffect(
     useCallback(() => {

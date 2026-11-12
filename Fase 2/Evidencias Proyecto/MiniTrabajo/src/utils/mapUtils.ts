@@ -1,4 +1,4 @@
-import type { TrabajoUI } from './functionsTrabajos';
+import type { TrabajoUI } from '../services/trabajos';
 import {
   aproximarUbicacion,
   esUbicacionEnRM,

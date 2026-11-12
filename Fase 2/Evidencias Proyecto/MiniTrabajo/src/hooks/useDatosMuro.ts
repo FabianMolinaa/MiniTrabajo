@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '../services/supabase';
 import {
-  CategoriaFiltro, ComunaFiltro, TrabajoUI,
-  fetchCategoriasFiltro, fetchComunasFiltro, fetchTrabajosMuro,
-} from '../utils/functionsTrabajos';
+  fetchCategoriasFiltro, fetchComunasFiltro,
+  type CategoriaFiltro, type ComunaFiltro,
+} from '../services/catalogos';
+import { fetchTrabajosMuro, type TrabajoUI } from '../services/trabajos';
 import type { EstadoCargaLista } from './useListaRemota';
 
 interface Coordenadas { latitude: number; longitude: number; }
@@ -41,7 +42,10 @@ export function useDatosMuro(coordenadasRef: { current: Coordenadas | null }) {
         (async () => {
           try {
             const lista = await fetchTrabajosMuro(user.id, coords);
-            if (vigente()) setTrabajos(lista);
+            if (vigente()) {
+              // Es el estado de la postulación de esta cuenta, no el del trabajo.
+              setTrabajos(lista.filter(trabajo => trabajo.estado !== 'rechazado'));
+            }
           } catch {
             if (vigente()) setErrorTrabajos('No pudimos cargar los trabajos. Revisa tu conexión e inténtalo nuevamente.');
           } finally {
