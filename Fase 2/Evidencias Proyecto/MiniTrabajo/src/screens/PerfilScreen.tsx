@@ -1,4 +1,3 @@
-import React from "react";
 import { View, Modal } from "react-native";
 import PagoWebpay from "../components/PagoWebpay";
 import HistorialCompras from "../components/HistorialCompras";

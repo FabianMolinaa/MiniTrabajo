@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import EstadoListaRemota from "../components/EstadoListaRemota";
 import { useDatosMuro } from "../hooks/useDatosMuro";
 import {

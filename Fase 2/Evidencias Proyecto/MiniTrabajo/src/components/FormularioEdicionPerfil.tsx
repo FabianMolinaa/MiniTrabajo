@@ -1,4 +1,3 @@
-import React from "react";
 import { View, Text, TextInput, TouchableOpacity, ScrollView, Image, ActivityIndicator, FlatList, KeyboardAvoidingView, Platform, StyleSheet } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import EstadoListaRemota from "./EstadoListaRemota";
