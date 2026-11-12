@@ -107,11 +107,6 @@ export default function TrabajosScreen() {
     mensaje: "",
     tipo: "info",
   });
-
-  const [coordenadasUsuario, setCoordenadasUsuario] = useState<{
-    latitude: number;
-    longitude: number;
-  } | null>(null);
   const coordenadasUsuarioRef = useRef<{
     latitude: number;
     longitude: number;
@@ -194,7 +189,6 @@ export default function TrabajosScreen() {
                 longitude: pos.coords.longitude,
               };
               coordenadasUsuarioRef.current = coords;
-              setCoordenadasUsuario(coords);
             }
           }
         } catch {}

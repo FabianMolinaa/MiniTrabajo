@@ -407,30 +407,6 @@ export const styles = StyleSheet.create({
     fontWeight: '700',
   },
 
-  // Estado de carga o sin resultados
-  loadingOverlay: {
-    ...StyleSheet.absoluteFill,
-    backgroundColor: 'rgba(13, 15, 18, 0.75)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 25,
-  },
-  loadingBox: {
-    backgroundColor: colors.surface,
-    paddingHorizontal: 24,
-    paddingVertical: 18,
-    borderRadius: 16,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: colors.border,
-    gap: 12,
-  },
-  loadingText: {
-    fontSize: 14,
-    color: colors.textPrimary,
-    fontWeight: '600',
-  },
-
   // Modal Detalle completo de la tarea
   modalOverlay: {
     flex: 1,

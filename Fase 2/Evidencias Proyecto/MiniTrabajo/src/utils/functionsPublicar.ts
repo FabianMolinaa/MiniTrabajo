@@ -1,15 +1,10 @@
 import { esUbicacionEnRM } from "./ubicacion";
-export { LIMITES_RM, esUbicacionEnRM } from "./ubicacion";
 
 export const COSTO_DESTACAR = 2;
 
 export const limpiarMontoChileno = (montoTexto: string): number => {
   const limpio = montoTexto.replace(/[^0-9]/g, "");
   return parseInt(limpio, 10) || 0;
-};
-
-export const formatearMonedaCLP = (monto: number): string => {
-  return `$${monto.toLocaleString("es-CL")}`;
 };
 
 export const validarFormularioPublicar = (

@@ -4,7 +4,7 @@ import { supabase } from './supabase';
 
 const BANCO_ORIGIN = 'https://webpay3gint.transbank.cl';
 
-export const CONFIRMACION_URL =
+const CONFIRMACION_URL =
   'https://ajbgivxwszqbxoottewb.supabase.co/functions/v1/webpay-confirmar';
 
 export interface CompraCreditos {
@@ -90,7 +90,7 @@ async function detalleError(
   };
 }
 
-export async function consultarCompra(
+async function consultarCompra(
   compraId: string
 ): Promise<CompraCreditos> {
   const { data, error } = await supabase
@@ -107,7 +107,6 @@ export async function consultarCompra(
 
   return data as CompraCreditos;
 }
-// AGREGA AQUÍ la nueva función:
 export async function consultarHistorialCompras(
   pagina = 0
 ): Promise<CompraCreditos[]> {
@@ -323,14 +322,6 @@ export async function verificarPago(
   return compra;
 }
 
-export async function olvidarIntento(): Promise<void> {
-  const sesion = await sesionActual();
-
-  await AsyncStorage.removeItem(
-    clave(sesion.user.id)
-  );
-}
-
 export function esRetornoWebpay(direccion: string): boolean {
   try {
     const actual = new URL(direccion);
@@ -343,42 +334,4 @@ export function esRetornoWebpay(direccion: string): boolean {
   } catch {
     return false;
   }
-}
-export async function hayIntentoPendiente(): Promise<boolean> {
-  const sesion = await sesionActual();
-  const guardado = await AsyncStorage.getItem(
-    clave(sesion.user.id)
-  );
-
-  if (!guardado) return false;
-
-  let intento: Intento;
-
-  try {
-    const valor = JSON.parse(guardado);
-
-    if (
-      !valor ||
-      typeof valor.solicitudId !== 'string' ||
-      typeof valor.paqueteId !== 'string' ||
-      (
-        valor.compraId !== undefined &&
-        typeof valor.compraId !== 'string'
-      )
-    ) {
-      throw new Error();
-    }
-
-    intento = valor;
-  } catch {
-    throw new Error(
-      'No se pudo leer el intento guardado. Puedes cerrarlo desde esta pantalla.'
-    );
-  }
-
-  if (!intento.compraId) return true;
-
-  const compra = await consultarCompra(intento.compraId);
-
-  return !esFinal(compra.estado);
 }

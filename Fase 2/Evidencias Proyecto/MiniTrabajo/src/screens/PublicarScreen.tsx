@@ -30,13 +30,12 @@ import { colors } from '../theme/colors';
 import { styles } from '../styles/PublicarStyles';
 import { supabase } from '../services/supabase';
 import { solicitarPermisoUbicacionAproximada } from '../services/permisosUbicacion';
-import { aproximarUbicacion } from '../utils/ubicacion';
+import { aproximarUbicacion, esUbicacionEnRM } from '../utils/ubicacion';
+import { formatearMonedaCLP } from '../utils/functionsTrabajos';
 import {
   COSTO_DESTACAR,
   limpiarMontoChileno,
-  formatearMonedaCLP,
   validarFormularioPublicar,
-  esUbicacionEnRM,
 } from '../utils/functionsPublicar';
 
 interface CategoriaItem {
