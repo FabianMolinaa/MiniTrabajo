@@ -198,9 +198,12 @@ export default function MapaScreen() {
   } = useDatosMuro(userLocationRef);
 
   const errorMapa = errorTrabajos ?? errorFiltros;
-  const estadoMapa = errorMapa || estadoFiltros === "error"
-    ? "error"
-    : cargando || estadoFiltros !== "lista" ? "cargando" : "lista";
+  const estadoMapa =
+    errorMapa || estadoFiltros === "error"
+      ? "error"
+      : cargando || estadoFiltros !== "lista"
+        ? "cargando"
+        : "lista";
 
   useEffect(() => {
     if (estadoMapa !== "lista") {
@@ -1245,7 +1248,6 @@ export default function MapaScreen() {
           </View>
         )}
       </Modal>
-
     </View>
   );
 }

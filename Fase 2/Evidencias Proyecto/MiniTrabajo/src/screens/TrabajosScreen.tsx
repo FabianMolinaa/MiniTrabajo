@@ -29,7 +29,10 @@ import {
 } from "../context/FiltrosContext";
 
 import { styles } from "../styles/TrabajosStyles";
-import { postularATrabajo, retirarPostulacion } from "../services/postulaciones";
+import {
+  postularATrabajo,
+  retirarPostulacion,
+} from "../services/postulaciones";
 import {
   eliminarTrabajoPropio,
   editarTrabajoPropio,
@@ -160,7 +163,8 @@ export default function TrabajosScreen() {
 
   useEffect(() => {
     if (cargando || errorTrabajos || !trabajoSeleccionado) return;
-    if (trabajos.some(trabajo => trabajo.id === trabajoSeleccionado.id)) return;
+    if (trabajos.some((trabajo) => trabajo.id === trabajoSeleccionado.id))
+      return;
 
     // Cerrar también un detalle que quedó abierto antes de actualizar la lista.
     solicitudSolicitanteRef.current += 1;

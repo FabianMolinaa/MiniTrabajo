@@ -1,10 +1,13 @@
-import React, { useState, useCallback, useRef, useEffect } from 'react';
-import EstadoListaRemota from '../components/EstadoListaRemota';
-import { useListaRemota } from '../hooks/useListaRemota';
-import { fetchCategoriasFiltro, fetchComunasFiltro } from '../services/catalogos';
-import { fetchCreditosPublicar } from '../services/perfiles';
-import { subirImagenTrabajoStorage } from '../services/imagenes';
-import { crearTrabajo, type TrabajoNuevo } from '../services/trabajos';
+import React, { useState, useCallback, useRef, useEffect } from "react";
+import EstadoListaRemota from "../components/EstadoListaRemota";
+import { useListaRemota } from "../hooks/useListaRemota";
+import {
+  fetchCategoriasFiltro,
+  fetchComunasFiltro,
+} from "../services/catalogos";
+import { fetchCreditosPublicar } from "../services/perfiles";
+import { subirImagenTrabajoStorage } from "../services/imagenes";
+import { crearTrabajo, type TrabajoNuevo } from "../services/trabajos";
 import {
   Text,
   View,
@@ -21,22 +24,22 @@ import {
   ActivityIndicator,
   RefreshControl,
   Alert,
-} from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
-import { Ionicons } from '@expo/vector-icons';
-import * as ImagePicker from 'expo-image-picker';
-import * as Location from 'expo-location';
-import { colors } from '../theme/colors';
-import { styles } from '../styles/PublicarStyles';
-import { supabase } from '../services/supabase';
-import { solicitarPermisoUbicacionAproximada } from '../services/permisosUbicacion';
-import { aproximarUbicacion, esUbicacionEnRM } from '../utils/ubicacion';
-import { formatearMonedaCLP } from '../utils/functionsTrabajos';
+} from "react-native";
+import { useFocusEffect } from "@react-navigation/native";
+import { Ionicons } from "@expo/vector-icons";
+import * as ImagePicker from "expo-image-picker";
+import * as Location from "expo-location";
+import { colors } from "../theme/colors";
+import { styles } from "../styles/PublicarStyles";
+import { supabase } from "../services/supabase";
+import { solicitarPermisoUbicacionAproximada } from "../services/permisosUbicacion";
+import { aproximarUbicacion, esUbicacionEnRM } from "../utils/ubicacion";
+import { formatearMonedaCLP } from "../utils/functionsTrabajos";
 import {
   COSTO_DESTACAR,
   limpiarMontoChileno,
   validarFormularioPublicar,
-} from '../utils/functionsPublicar';
+} from "../utils/functionsPublicar";
 
 interface CategoriaItem {
   id: number;
@@ -63,79 +66,123 @@ interface ResumenPublicacion {
   coordenadas?: { latitude: number; longitude: number } | null;
 }
 
-const URGENCIAS = ['Hoy mismo', 'Mañana', 'Este fin de semana', 'A coordinar'];
+const URGENCIAS = ["Hoy mismo", "Mañana", "Este fin de semana", "A coordinar"];
 
 export default function PublicarScreen() {
-  const scrollRef=
-    useRef<React.ComponentRef<typeof ScrollView>>(null);
+  const scrollRef = useRef<React.ComponentRef<typeof ScrollView>>(null);
 
   const [refrescando, setRefrescando] = useState(false);
-  const [titulo, setTitulo] = useState('');
-  const [monto, setMonto] = useState('');
-  const [descripcion, setDescripcion] = useState('');
-  const [urgencia, setUrgencia] = useState('Hoy mismo');
+  const [titulo, setTitulo] = useState("");
+  const [monto, setMonto] = useState("");
+  const [descripcion, setDescripcion] = useState("");
+  const [urgencia, setUrgencia] = useState("Hoy mismo");
   const [imagenes, setImagenes] = useState<ImagenLocal[]>([]);
 
   const {
-    datos: listaCategorias, estado: estadoCategorias,
-    error: errorCategorias, cargar: cargarCategorias,
-  } = useListaRemota<CategoriaItem>(fetchCategoriasFiltro, 'No pudimos cargar las categorías. Revisa tu conexión e inténtalo nuevamente.');
-  const [categoriaSeleccionada, setCategoriaSeleccionada] = useState<CategoriaItem | null>(null);
+    datos: listaCategorias,
+    estado: estadoCategorias,
+    error: errorCategorias,
+    cargar: cargarCategorias,
+  } = useListaRemota<CategoriaItem>(
+    fetchCategoriasFiltro,
+    "No pudimos cargar las categorías. Revisa tu conexión e inténtalo nuevamente.",
+  );
+  const [categoriaSeleccionada, setCategoriaSeleccionada] =
+    useState<CategoriaItem | null>(null);
 
   const {
-    datos: listaComunas, estado: estadoComunas,
-    error: errorComunas, cargar: cargarComunas,
-  } = useListaRemota<ComunaItem>(fetchComunasFiltro, 'No pudimos cargar las comunas. Revisa tu conexión e inténtalo nuevamente.');
-  const [comunaSeleccionada, setComunaSeleccionada] = useState<ComunaItem | null>(null);
+    datos: listaComunas,
+    estado: estadoComunas,
+    error: errorComunas,
+    cargar: cargarComunas,
+  } = useListaRemota<ComunaItem>(
+    fetchComunasFiltro,
+    "No pudimos cargar las comunas. Revisa tu conexión e inténtalo nuevamente.",
+  );
+  const [comunaSeleccionada, setComunaSeleccionada] =
+    useState<ComunaItem | null>(null);
 
   // Estados de GPS
-  const [coordenadas, setCoordenadas] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [coordenadas, setCoordenadas] = useState<{
+    latitude: number;
+    longitude: number;
+  } | null>(null);
   const [obteniendoGPS, setObteniendoGPS] = useState(false);
   const [infoGPS, setInfoGPS] = useState<string | null>(null);
 
-  const [creditosDisponibles, setCreditosDisponibles] = useState<number | null>(null);
+  const [creditosDisponibles, setCreditosDisponibles] = useState<number | null>(
+    null,
+  );
   const [cargandoSaldo, setCargandoSaldo] = useState(true);
   const [errorSaldo, setErrorSaldo] = useState<string | null>(null);
   const solicitudSaldoRef = useRef(0);
-  useEffect(() => () => { solicitudSaldoRef.current += 1; }, []);
+  useEffect(
+    () => () => {
+      solicitudSaldoRef.current += 1;
+    },
+    [],
+  );
   const [destacarConCreditos, setDestacarConCreditos] = useState(false);
   const [publicando, setPublicando] = useState(false);
-  const categoriasDisponibles = estadoCategorias === 'lista' && listaCategorias.length > 0;
-  const comunasDisponibles = estadoComunas === 'lista' && listaComunas.length > 0;
+  const categoriasDisponibles =
+    estadoCategorias === "lista" && listaCategorias.length > 0;
+  const comunasDisponibles =
+    estadoComunas === "lista" && listaComunas.length > 0;
   const erroresCarga = [
-    estadoCategorias === 'error' ? errorCategorias : null,
-    estadoComunas === 'error' ? errorComunas : null,
-    estadoCategorias === 'lista' && listaCategorias.length === 0
-      ? 'No hay categorías disponibles para publicar.' : null,
-    estadoComunas === 'lista' && listaComunas.length === 0
-      ? 'No hay comunas disponibles para publicar.' : null,
+    estadoCategorias === "error" ? errorCategorias : null,
+    estadoComunas === "error" ? errorComunas : null,
+    estadoCategorias === "lista" && listaCategorias.length === 0
+      ? "No hay categorías disponibles para publicar."
+      : null,
+    estadoComunas === "lista" && listaComunas.length === 0
+      ? "No hay comunas disponibles para publicar."
+      : null,
     errorSaldo,
   ].filter((mensaje): mensaje is string => mensaje !== null);
-  const errorCarga = erroresCarga.length > 1
-    ? 'No pudimos cargar todos los datos para publicar. Revisa tu conexión e inténtalo nuevamente.'
-    : erroresCarga[0] ?? null;
-  const catalogosListos = estadoCategorias === 'lista' && estadoComunas === 'lista'
-    && listaCategorias.some(c => c.id === categoriaSeleccionada?.id)
-    && listaComunas.some(c => c.id === comunaSeleccionada?.id);
+  const errorCarga =
+    erroresCarga.length > 1
+      ? "No pudimos cargar todos los datos para publicar. Revisa tu conexión e inténtalo nuevamente."
+      : (erroresCarga[0] ?? null);
+  const catalogosListos =
+    estadoCategorias === "lista" &&
+    estadoComunas === "lista" &&
+    listaCategorias.some((c) => c.id === categoriaSeleccionada?.id) &&
+    listaComunas.some((c) => c.id === comunaSeleccionada?.id);
   const estadoFormulario = errorCarga
-    ? 'error'
-    : cargandoSaldo || !catalogosListos ? 'cargando' : 'lista';
+    ? "error"
+    : cargandoSaldo || !catalogosListos
+      ? "cargando"
+      : "lista";
 
   useEffect(() => {
-    if (estadoCategorias === 'lista') {
-      setCategoriaSeleccionada(prev => listaCategorias.find(c => c.id === prev?.id) ?? listaCategorias[0] ?? null);
+    if (estadoCategorias === "lista") {
+      setCategoriaSeleccionada(
+        (prev) =>
+          listaCategorias.find((c) => c.id === prev?.id) ??
+          listaCategorias[0] ??
+          null,
+      );
     }
   }, [listaCategorias, estadoCategorias]);
 
   useEffect(() => {
-    if (estadoComunas === 'lista') {
-      setComunaSeleccionada(prev => listaComunas.find(c => c.id === prev?.id) ?? listaComunas[0] ?? null);
+    if (estadoComunas === "lista") {
+      setComunaSeleccionada(
+        (prev) =>
+          listaComunas.find((c) => c.id === prev?.id) ??
+          listaComunas[0] ??
+          null,
+      );
     }
   }, [listaComunas, estadoComunas]);
 
   const [mensajeError, setMensajeError] = useState<string | null>(null);
-  const [modalVisible, setModalVisible] = useState<'ninguno' | 'categoria' | 'comuna'>('ninguno');
-  const [resumenExito, setResumenExito] = useState<ResumenPublicacion | null>(null);
+  const [modalVisible, setModalVisible] = useState<
+    "ninguno" | "categoria" | "comuna"
+  >("ninguno");
+  const [resumenExito, setResumenExito] = useState<ResumenPublicacion | null>(
+    null,
+  );
 
   const cargarCreditos = useCallback(async () => {
     const solicitud = ++solicitudSaldoRef.current;
@@ -143,15 +190,20 @@ export default function PublicarScreen() {
     setCreditosDisponibles(null);
     setErrorSaldo(null);
     try {
-      const { data: { user }, error } = await supabase.auth.getUser();
-      if (error || !user) throw new Error('No se pudo verificar la sesión.');
+      const {
+        data: { user },
+        error,
+      } = await supabase.auth.getUser();
+      if (error || !user) throw new Error("No se pudo verificar la sesión.");
       const saldo = await fetchCreditosPublicar(user.id);
       if (solicitud === solicitudSaldoRef.current) {
         setCreditosDisponibles(saldo);
       }
     } catch {
       if (solicitud === solicitudSaldoRef.current) {
-        setErrorSaldo('No pudimos cargar tu saldo. Revisa tu conexión e inténtalo nuevamente.');
+        setErrorSaldo(
+          "No pudimos cargar tu saldo. Revisa tu conexión e inténtalo nuevamente.",
+        );
         setDestacarConCreditos(false);
       }
     } finally {
@@ -160,36 +212,45 @@ export default function PublicarScreen() {
   }, []);
 
   const cargarCatalogosYCreditos = useCallback(async () => {
-    setModalVisible('ninguno');
-    await Promise.all([cargarCategorias('catalogo'), cargarComunas('catalogo'), cargarCreditos()]);
+    setModalVisible("ninguno");
+    await Promise.all([
+      cargarCategorias("catalogo"),
+      cargarComunas("catalogo"),
+      cargarCreditos(),
+    ]);
   }, [cargarCategorias, cargarComunas, cargarCreditos]);
 
   const onRefresh = useCallback(async () => {
     setRefrescando(true);
-    try { await cargarCatalogosYCreditos(); }
-    finally { setRefrescando(false); }
+    try {
+      await cargarCatalogosYCreditos();
+    } finally {
+      setRefrescando(false);
+    }
   }, [cargarCatalogosYCreditos]);
 
   useFocusEffect(
     useCallback(() => {
       cargarCatalogosYCreditos();
-    }, [cargarCatalogosYCreditos])
+    }, [cargarCatalogosYCreditos]),
   );
 
   const handlePickImage = async () => {
     if (imagenes.length >= 3) {
-      setMensajeError('Límite alcanzado: máximo 3 imágenes por trabajo.');
+      setMensajeError("Límite alcanzado: máximo 3 imágenes por trabajo.");
       return;
     }
 
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') {
-      setMensajeError('Se requiere permiso para acceder a la galería de fotos.');
+    if (status !== "granted") {
+      setMensajeError(
+        "Se requiere permiso para acceder a la galería de fotos.",
+      );
       return;
     }
 
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
+      mediaTypes: ["images"],
       allowsEditing: true,
       aspect: [4, 3],
       quality: 0.6,
@@ -221,8 +282,8 @@ export default function PublicarScreen() {
       const permiso = await solicitarPermisoUbicacionAproximada();
       if (!permiso.granted) {
         Alert.alert(
-          'Ubicación opcional',
-          'Puedes permitir la ubicación aproximada o publicar seleccionando únicamente la comuna.'
+          "Ubicación opcional",
+          "Puedes permitir la ubicación aproximada o publicar seleccionando únicamente la comuna.",
         );
         return;
       }
@@ -231,13 +292,12 @@ export default function PublicarScreen() {
         accuracy: Location.Accuracy.Low,
       });
 
-      if (!esUbicacionEnRM(
-        posicion.coords.latitude,
-        posicion.coords.longitude
-      )) {
+      if (
+        !esUbicacionEnRM(posicion.coords.latitude, posicion.coords.longitude)
+      ) {
         Alert.alert(
-          'Zona no habilitada',
-          'La ubicación recibida está fuera de la zona habilitada. Selecciona la comuna para publicar sin GPS.'
+          "Zona no habilitada",
+          "La ubicación recibida está fuera de la zona habilitada. Selecciona la comuna para publicar sin GPS.",
         );
         return;
       }
@@ -249,16 +309,17 @@ export default function PublicarScreen() {
 
       // Conservar y consultar únicamente la zona aproximada.
       setCoordenadas(zona);
-      setInfoGPS('Zona aproximada. Revisa la comuna seleccionada.');
+      setInfoGPS("Zona aproximada. Revisa la comuna seleccionada.");
 
       try {
         const geocodigos = await Location.reverseGeocodeAsync(zona);
         const normalizar = (nombre: string) => {
-          const valor = nombre.normalize('NFD')
-            .replace(/[\u0300-\u036f]/g, '')
+          const valor = nombre
+            .normalize("NFD")
+            .replace(/[\u0300-\u036f]/g, "")
             .toLowerCase()
-            .replace(/\s+/g, '');
-          return valor === 'santiago' ? 'santiagocentro' : valor;
+            .replace(/\s+/g, "");
+          return valor === "santiago" ? "santiagocentro" : valor;
         };
 
         for (const direccion of geocodigos) {
@@ -270,8 +331,8 @@ export default function PublicarScreen() {
 
           for (const nombre of nombres) {
             if (!nombre) continue;
-            const comuna = listaComunas.find(c =>
-              normalizar(c.nombre) === normalizar(nombre)
+            const comuna = listaComunas.find(
+              (c) => normalizar(c.nombre) === normalizar(nombre),
             );
 
             if (comuna) {
@@ -286,23 +347,22 @@ export default function PublicarScreen() {
       }
     } catch {
       Alert.alert(
-        'Ubicación no disponible',
-        'No pudimos obtener tu ubicación aproximada. Puedes seleccionar la comuna y publicar sin GPS.'
+        "Ubicación no disponible",
+        "No pudimos obtener tu ubicación aproximada. Puedes seleccionar la comuna y publicar sin GPS.",
       );
     } finally {
       setObteniendoGPS(false);
     }
   };
 
-
   const handleToggleDestacar = (value: boolean) => {
     if (value && (cargandoSaldo || creditosDisponibles === null)) {
-      setMensajeError('Carga tu saldo antes de destacar la publicación.');
+      setMensajeError("Carga tu saldo antes de destacar la publicación.");
       return;
     }
     if (value && (creditosDisponibles ?? 0) < COSTO_DESTACAR) {
       setMensajeError(
-        `Créditos insuficientes: necesitas ${COSTO_DESTACAR} créditos y tu saldo es ${creditosDisponibles}.`
+        `Créditos insuficientes: necesitas ${COSTO_DESTACAR} créditos y tu saldo es ${creditosDisponibles}.`,
       );
       scrollRef.current?.scrollTo({ y: 0, animated: true });
       return;
@@ -314,8 +374,8 @@ export default function PublicarScreen() {
   const handlePublicar = async () => {
     setMensajeError(null);
 
-    if (estadoFormulario !== 'lista') {
-      setMensajeError('Carga los datos necesarios antes de publicar.');
+    if (estadoFormulario !== "lista") {
+      setMensajeError("Carga los datos necesarios antes de publicar.");
       return;
     }
 
@@ -327,7 +387,7 @@ export default function PublicarScreen() {
       comunaSeleccionada?.id,
       destacarConCreditos,
       creditosDisponibles ?? 0,
-      coordenadas
+      coordenadas,
     );
 
     if (!validacion.valido) {
@@ -339,14 +399,21 @@ export default function PublicarScreen() {
     setPublicando(true);
 
     try {
-      const { data: { user }, error } = await supabase.auth.getUser();
+      const {
+        data: { user },
+        error,
+      } = await supabase.auth.getUser();
       if (error || !user) {
-        setMensajeError('No pudimos verificar tu sesión para publicar. Revisa tu conexión e inténtalo nuevamente.');
+        setMensajeError(
+          "No pudimos verificar tu sesión para publicar. Revisa tu conexión e inténtalo nuevamente.",
+        );
         setPublicando(false);
         return;
       }
 
-      const uploadPromises = imagenes.map((img) => subirImagenTrabajoStorage(img.base64, user.id));
+      const uploadPromises = imagenes.map((img) =>
+        subirImagenTrabajoStorage(img.base64, user.id),
+      );
       const urlsPublicas = (await Promise.all(uploadPromises)).filter(Boolean);
 
       const montoNumerico = limpiarMontoChileno(monto);
@@ -360,7 +427,7 @@ export default function PublicarScreen() {
         comuna_id: comunaSeleccionada!.id,
         monto: montoNumerico,
         destacado: destacarConCreditos,
-        estado: 'disponible',
+        estado: "disponible",
         imagenes: urlsPublicas,
       };
 
@@ -394,16 +461,20 @@ export default function PublicarScreen() {
         coordenadas: zonaPublicada,
       });
 
-      setTitulo('');
-      setMonto('');
-      setDescripcion('');
+      setTitulo("");
+      setMonto("");
+      setDescripcion("");
       setImagenes([]);
       setCoordenadas(null);
       setInfoGPS(null);
       setDestacarConCreditos(false);
       setMensajeError(null);
     } catch (error: unknown) {
-      setMensajeError(error instanceof Error ? error.message : 'Error inesperado al publicar.');
+      setMensajeError(
+        error instanceof Error
+          ? error.message
+          : "Error inesperado al publicar.",
+      );
       scrollRef.current?.scrollTo({ y: 0, animated: true });
     } finally {
       setPublicando(false);
@@ -413,8 +484,8 @@ export default function PublicarScreen() {
   return (
     <KeyboardAvoidingView
       style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 80}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 80}
     >
       <EstadoListaRemota
         estado={estadoFormulario}
@@ -440,7 +511,11 @@ export default function PublicarScreen() {
             <View style={styles.creditsBadge}>
               <Ionicons name="sparkles" size={13} color="#eab308" />
               <Text style={styles.creditsText}>
-                {cargandoSaldo ? 'Actualizando saldo…' : creditosDisponibles === null ? 'Saldo sin actualizar' : `${creditosDisponibles} créditos`}
+                {cargandoSaldo
+                  ? "Actualizando saldo…"
+                  : creditosDisponibles === null
+                    ? "Saldo sin actualizar"
+                    : `${creditosDisponibles} créditos`}
               </Text>
             </View>
           </View>
@@ -473,14 +548,23 @@ export default function PublicarScreen() {
           </View>
 
           <View style={styles.imageSectionHeader}>
-            <Text style={styles.label}>Fotos referenciales (Opcional, máx. 3)</Text>
+            <Text style={styles.label}>
+              Fotos referenciales (Opcional, máx. 3)
+            </Text>
             <Text style={styles.counterText}>{imagenes.length}/3</Text>
           </View>
 
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.imageScroll}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={styles.imageScroll}
+          >
             {imagenes.map((img, idx) => (
               <View key={idx} style={styles.imageThumbnailWrap}>
-                <Image source={{ uri: img.uri }} style={styles.thumbnailImage} />
+                <Image
+                  source={{ uri: img.uri }}
+                  style={styles.thumbnailImage}
+                />
                 <TouchableOpacity
                   style={styles.btnRemoveImage}
                   onPress={() => handleRemoveImage(idx)}
@@ -497,7 +581,11 @@ export default function PublicarScreen() {
                 onPress={handlePickImage}
                 activeOpacity={0.7}
               >
-                <Ionicons name="camera-outline" size={22} color={colors.accentBlue} />
+                <Ionicons
+                  name="camera-outline"
+                  size={22}
+                  color={colors.accentBlue}
+                />
                 <Text style={styles.btnAddImageText}>Agregar foto</Text>
               </TouchableOpacity>
             )}
@@ -509,21 +597,23 @@ export default function PublicarScreen() {
           <TouchableOpacity
             style={styles.dropdownButton}
             activeOpacity={0.7}
-            onPress={() => setModalVisible('categoria')}
+            onPress={() => setModalVisible("categoria")}
             disabled={!categoriasDisponibles || publicando}
           >
             <View style={styles.dropdownInner}>
               <Ionicons
-                name={(categoriaSeleccionada?.icono as any) || 'briefcase-outline'}
+                name={
+                  (categoriaSeleccionada?.icono as any) || "briefcase-outline"
+                }
                 size={18}
                 color={colors.accentBlue}
               />
               <Text style={styles.dropdownText}>
                 {categoriasDisponibles
-                  ? categoriaSeleccionada?.nombre ?? 'Seleccionar categoría'
-                  : estadoCategorias === 'error' || estadoCategorias === 'lista'
-                    ? 'Categorías no disponibles'
-                    : 'Cargando categorías...'}
+                  ? (categoriaSeleccionada?.nombre ?? "Seleccionar categoría")
+                  : estadoCategorias === "error" || estadoCategorias === "lista"
+                    ? "Categorías no disponibles"
+                    : "Cargando categorías..."}
               </Text>
             </View>
             <Ionicons name="chevron-down" size={18} color={colors.textMuted} />
@@ -548,31 +638,41 @@ export default function PublicarScreen() {
             />
           </View>
           <Text style={styles.helperText}>
-            * El pago se efectúa directamente al ejecutor una vez terminada la labor.
+            * El pago se efectúa directamente al ejecutor una vez terminada la
+            labor.
           </Text>
 
           <Text style={styles.label}>
-            Ubicación del trabajo (Región Metropolitana) <Text style={styles.requiredAsterisk}>*</Text>
+            Ubicación del trabajo (Región Metropolitana){" "}
+            <Text style={styles.requiredAsterisk}>*</Text>
           </Text>
           <View style={styles.locationRow}>
             <View style={styles.dropdownButtonFlex}>
               <TouchableOpacity
                 style={styles.dropdownButton}
                 activeOpacity={0.7}
-                onPress={() => setModalVisible('comuna')}
+                onPress={() => setModalVisible("comuna")}
                 disabled={!comunasDisponibles || publicando}
               >
                 <View style={styles.dropdownInner}>
-                  <Ionicons name="navigate-outline" size={18} color={colors.accentBlue} />
+                  <Ionicons
+                    name="navigate-outline"
+                    size={18}
+                    color={colors.accentBlue}
+                  />
                   <Text style={styles.dropdownText}>
                     {comunasDisponibles
-                      ? comunaSeleccionada?.nombre ?? 'Seleccionar comuna'
-                      : estadoComunas === 'error' || estadoComunas === 'lista'
-                        ? 'Comunas no disponibles'
-                        : 'Cargando comunas...'}
+                      ? (comunaSeleccionada?.nombre ?? "Seleccionar comuna")
+                      : estadoComunas === "error" || estadoComunas === "lista"
+                        ? "Comunas no disponibles"
+                        : "Cargando comunas..."}
                   </Text>
                 </View>
-                <Ionicons name="chevron-down" size={18} color={colors.textMuted} />
+                <Ionicons
+                  name="chevron-down"
+                  size={18}
+                  color={colors.textMuted}
+                />
               </TouchableOpacity>
             </View>
 
@@ -581,13 +681,17 @@ export default function PublicarScreen() {
               activeOpacity={0.8}
               onPress={handleObtenerUbicacionGPS}
               accessibilityLabel="Usar ubicación aproximada"
-              disabled={obteniendoGPS || estadoComunas !== 'lista' || listaComunas.length === 0}
+              disabled={
+                obteniendoGPS ||
+                estadoComunas !== "lista" ||
+                listaComunas.length === 0
+              }
             >
               {obteniendoGPS ? (
                 <ActivityIndicator size="small" color={colors.accentBlue} />
               ) : (
                 <Ionicons
-                  name={coordenadas ? 'locate' : 'locate-outline'}
+                  name={coordenadas ? "locate" : "locate-outline"}
                   size={22}
                   color={coordenadas ? colors.accentBlue : colors.textPrimary}
                 />
@@ -600,18 +704,34 @@ export default function PublicarScreen() {
               <View style={styles.gpsBadgeContent}>
                 <Ionicons name="location" size={14} color={colors.accentBlue} />
                 <Text style={styles.gpsBadgeText} numberOfLines={1}>
-                  {infoGPS || 'Zona aproximada seleccionada'}
+                  {infoGPS || "Zona aproximada seleccionada"}
                 </Text>
               </View>
-              <TouchableOpacity onPress={() => { setCoordenadas(null); setInfoGPS(null); }}>
-                <Ionicons name="close-circle" size={16} color={colors.accentBlue} />
+              <TouchableOpacity
+                onPress={() => {
+                  setCoordenadas(null);
+                  setInfoGPS(null);
+                }}
+              >
+                <Ionicons
+                  name="close-circle"
+                  size={16}
+                  color={colors.accentBlue}
+                />
               </TouchableOpacity>
             </View>
           )}
 
           {coordenadas && (
-            <Text style={{ color: colors.textSecondary, fontSize: 12, marginBottom: 12 }}>
-              Publicaremos un sector aproximado. Confirma que la comuna seleccionada sea la del trabajo.
+            <Text
+              style={{
+                color: colors.textSecondary,
+                fontSize: 12,
+                marginBottom: 12,
+              }}
+            >
+              Publicaremos un sector aproximado. Confirma que la comuna
+              seleccionada sea la del trabajo.
             </Text>
           )}
 
@@ -623,7 +743,12 @@ export default function PublicarScreen() {
                 style={[styles.chip, urgencia === item && styles.chipActive]}
                 onPress={() => setUrgencia(item)}
               >
-                <Text style={[styles.chipText, urgencia === item && styles.chipTextActive]}>
+                <Text
+                  style={[
+                    styles.chipText,
+                    urgencia === item && styles.chipTextActive,
+                  ]}
+                >
                   {item}
                 </Text>
               </TouchableOpacity>
@@ -631,7 +756,8 @@ export default function PublicarScreen() {
           </View>
 
           <Text style={styles.label}>
-            Descripción y requerimientos <Text style={styles.requiredAsterisk}>*</Text>
+            Descripción y requerimientos{" "}
+            <Text style={styles.requiredAsterisk}>*</Text>
           </Text>
           <View style={[styles.inputWrap, styles.textAreaWrap]}>
             <TextInput
@@ -650,30 +776,45 @@ export default function PublicarScreen() {
             />
           </View>
 
-          <View style={[styles.promoCard, destacarConCreditos && styles.promoCardActive]}>
+          <View
+            style={[
+              styles.promoCard,
+              destacarConCreditos && styles.promoCardActive,
+            ]}
+          >
             <View style={styles.promoHeader}>
               <View style={styles.promoTitleWrap}>
                 <Ionicons
-                  name={destacarConCreditos ? 'flash' : 'flash-outline'}
+                  name={destacarConCreditos ? "flash" : "flash-outline"}
                   size={18}
-                  color={destacarConCreditos ? '#eab308' : colors.textSecondary}
+                  color={destacarConCreditos ? "#eab308" : colors.textSecondary}
                 />
                 <Text style={styles.promoTitle}>Destacar publicación</Text>
                 <View style={styles.promoCostBadge}>
-                  <Text style={styles.promoCostText}>{COSTO_DESTACAR} créditos</Text>
+                  <Text style={styles.promoCostText}>
+                    {COSTO_DESTACAR} créditos
+                  </Text>
                 </View>
               </View>
 
               <Switch
                 value={destacarConCreditos}
-                disabled={publicando || cargandoSaldo || creditosDisponibles === null}
+                disabled={
+                  publicando || cargandoSaldo || creditosDisponibles === null
+                }
                 onValueChange={handleToggleDestacar}
-                trackColor={{ false: colors.surfaceLight, true: colors.accentBlueBg }}
-                thumbColor={destacarConCreditos ? colors.accentBlue : colors.textMuted}
+                trackColor={{
+                  false: colors.surfaceLight,
+                  true: colors.accentBlueBg,
+                }}
+                thumbColor={
+                  destacarConCreditos ? colors.accentBlue : colors.textMuted
+                }
               />
             </View>
             <Text style={styles.promoDescription}>
-              Fija este trabajo al inicio de la lista de búsquedas para encontrar postulantes de forma prioritaria.
+              Fija este trabajo al inicio de la lista de búsquedas para
+              encontrar postulantes de forma prioritaria.
             </Text>
           </View>
 
@@ -685,19 +826,28 @@ export default function PublicarScreen() {
             ]}
             activeOpacity={0.85}
             onPress={handlePublicar}
-            disabled={publicando || !catalogosListos || (destacarConCreditos && (cargandoSaldo || creditosDisponibles === null))}
+            disabled={
+              publicando ||
+              !catalogosListos ||
+              (destacarConCreditos &&
+                (cargandoSaldo || creditosDisponibles === null))
+            }
           >
             {publicando ? (
               <ActivityIndicator size="small" color="#ffffff" />
             ) : (
               <>
                 <Ionicons
-                  name={destacarConCreditos ? 'sparkles' : 'paper-plane-outline'}
+                  name={
+                    destacarConCreditos ? "sparkles" : "paper-plane-outline"
+                  }
                   size={19}
                   color="#ffffff"
                 />
                 <Text style={styles.submitButtonText}>
-                  {destacarConCreditos ? 'Publicar como Destacado' : 'Publicar mini-trabajo'}
+                  {destacarConCreditos
+                    ? "Publicar como Destacado"
+                    : "Publicar mini-trabajo"}
                 </Text>
               </>
             )}
@@ -709,21 +859,33 @@ export default function PublicarScreen() {
       <Modal
         animationType="fade"
         transparent={true}
-        visible={estadoFormulario === 'lista' && modalVisible !== 'ninguno'}
-        onRequestClose={() => setModalVisible('ninguno')}
+        visible={estadoFormulario === "lista" && modalVisible !== "ninguno"}
+        onRequestClose={() => setModalVisible("ninguno")}
       >
-        <Pressable style={styles.modalOverlay} onPress={() => setModalVisible('ninguno')}>
-          <Pressable style={styles.modalBox} onPress={(e) => e.stopPropagation()}>
+        <Pressable
+          style={styles.modalOverlay}
+          onPress={() => setModalVisible("ninguno")}
+        >
+          <Pressable
+            style={styles.modalBox}
+            onPress={(e) => e.stopPropagation()}
+          >
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>
-                {modalVisible === 'categoria' ? 'Seleccionar Categoría' : 'Seleccionar Comuna (RM)'}
+                {modalVisible === "categoria"
+                  ? "Seleccionar Categoría"
+                  : "Seleccionar Comuna (RM)"}
               </Text>
-              <TouchableOpacity onPress={() => setModalVisible('ninguno')}>
-                <Ionicons name="close-circle" size={22} color={colors.textMuted} />
+              <TouchableOpacity onPress={() => setModalVisible("ninguno")}>
+                <Ionicons
+                  name="close-circle"
+                  size={22}
+                  color={colors.textMuted}
+                />
               </TouchableOpacity>
             </View>
 
-            {modalVisible === 'categoria' ? (
+            {modalVisible === "categoria" ? (
               <FlatList
                 data={listaCategorias}
                 keyExtractor={(item) => item.id.toString()}
@@ -732,23 +894,47 @@ export default function PublicarScreen() {
                   const isSelected = categoriaSeleccionada?.id === item.id;
                   return (
                     <TouchableOpacity
-                      style={[styles.modalItem, isSelected && styles.modalItemActive]}
+                      style={[
+                        styles.modalItem,
+                        isSelected && styles.modalItemActive,
+                      ]}
                       onPress={() => {
                         setCategoriaSeleccionada(item);
-                        setModalVisible('ninguno');
+                        setModalVisible("ninguno");
                       }}
                     >
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                      <View
+                        style={{
+                          flexDirection: "row",
+                          alignItems: "center",
+                          gap: 10,
+                        }}
+                      >
                         <Ionicons
-                          name={(item.icono as any) || 'briefcase-outline'}
+                          name={(item.icono as any) || "briefcase-outline"}
                           size={18}
-                          color={isSelected ? colors.accentBlue : colors.textSecondary}
+                          color={
+                            isSelected
+                              ? colors.accentBlue
+                              : colors.textSecondary
+                          }
                         />
-                        <Text style={[styles.modalItemText, isSelected && styles.modalItemTextActive]}>
+                        <Text
+                          style={[
+                            styles.modalItemText,
+                            isSelected && styles.modalItemTextActive,
+                          ]}
+                        >
                           {item.nombre}
                         </Text>
                       </View>
-                      {isSelected && <Ionicons name="checkmark" size={18} color={colors.accentBlue} />}
+                      {isSelected && (
+                        <Ionicons
+                          name="checkmark"
+                          size={18}
+                          color={colors.accentBlue}
+                        />
+                      )}
                     </TouchableOpacity>
                   );
                 }}
@@ -762,16 +948,30 @@ export default function PublicarScreen() {
                   const isSelected = comunaSeleccionada?.id === item.id;
                   return (
                     <TouchableOpacity
-                      style={[styles.modalItem, isSelected && styles.modalItemActive]}
+                      style={[
+                        styles.modalItem,
+                        isSelected && styles.modalItemActive,
+                      ]}
                       onPress={() => {
                         setComunaSeleccionada(item);
-                        setModalVisible('ninguno');
+                        setModalVisible("ninguno");
                       }}
                     >
-                      <Text style={[styles.modalItemText, isSelected && styles.modalItemTextActive]}>
+                      <Text
+                        style={[
+                          styles.modalItemText,
+                          isSelected && styles.modalItemTextActive,
+                        ]}
+                      >
                         {item.nombre}
                       </Text>
-                      {isSelected && <Ionicons name="checkmark" size={18} color={colors.accentBlue} />}
+                      {isSelected && (
+                        <Ionicons
+                          name="checkmark"
+                          size={18}
+                          color={colors.accentBlue}
+                        />
+                      )}
                     </TouchableOpacity>
                   );
                 }}
@@ -788,8 +988,14 @@ export default function PublicarScreen() {
         visible={resumenExito !== null}
         onRequestClose={() => setResumenExito(null)}
       >
-        <Pressable style={styles.modalOverlay} onPress={() => setResumenExito(null)}>
-          <Pressable style={styles.successModalBox} onPress={(e) => e.stopPropagation()}>
+        <Pressable
+          style={styles.modalOverlay}
+          onPress={() => setResumenExito(null)}
+        >
+          <Pressable
+            style={styles.successModalBox}
+            onPress={(e) => e.stopPropagation()}
+          >
             <View style={styles.successIconWrap}>
               <Ionicons name="checkmark" size={32} color={colors.accentGreen} />
             </View>
@@ -797,19 +1003,23 @@ export default function PublicarScreen() {
             <Text style={styles.successTitle}>¡Publicación Creada!</Text>
             <Text style={styles.successSubtitle}>
               {resumenExito?.destacado
-                ? 'Tu trabajo se publicó con éxito y quedó en los primeros lugares de búsqueda.'
-                : 'Tu oferta ya es visible para los postulantes en la comunidad.'}
+                ? "Tu trabajo se publicó con éxito y quedó en los primeros lugares de búsqueda."
+                : "Tu oferta ya es visible para los postulantes en la comunidad."}
             </Text>
 
             {resumenExito && (
               <View style={styles.successSummaryCard}>
                 <View style={styles.summaryRow}>
                   <Text style={styles.summaryKey}>Título:</Text>
-                  <Text style={styles.summaryVal} numberOfLines={1}>{resumenExito.titulo}</Text>
+                  <Text style={styles.summaryVal} numberOfLines={1}>
+                    {resumenExito.titulo}
+                  </Text>
                 </View>
                 <View style={styles.summaryRow}>
                   <Text style={styles.summaryKey}>Categoría:</Text>
-                  <Text style={styles.summaryVal}>{resumenExito.categoria}</Text>
+                  <Text style={styles.summaryVal}>
+                    {resumenExito.categoria}
+                  </Text>
                 </View>
                 <View style={styles.summaryRow}>
                   <Text style={styles.summaryKey}>Comuna:</Text>
@@ -818,21 +1028,25 @@ export default function PublicarScreen() {
                 {resumenExito.coordenadas && (
                   <View style={styles.summaryRow}>
                     <Text style={styles.summaryKey}>Ubicación:</Text>
-                    <Text style={[styles.summaryVal, { color: colors.accentBlue }]}>
+                    <Text
+                      style={[styles.summaryVal, { color: colors.accentBlue }]}
+                    >
                       Zona aproximada
                     </Text>
                   </View>
                 )}
                 <View style={styles.summaryRow}>
                   <Text style={styles.summaryKey}>Pago referencial:</Text>
-                  <Text style={[styles.summaryVal, { color: colors.accentGreen }]}>
+                  <Text
+                    style={[styles.summaryVal, { color: colors.accentGreen }]}
+                  >
                     {formatearMonedaCLP(resumenExito.monto)}
                   </Text>
                 </View>
                 {resumenExito.destacado && (
                   <View style={styles.summaryRow}>
                     <Text style={styles.summaryKey}>Créditos usados:</Text>
-                    <Text style={[styles.summaryVal, { color: '#eab308' }]}>
+                    <Text style={[styles.summaryVal, { color: "#eab308" }]}>
                       -{COSTO_DESTACAR} créditos
                     </Text>
                   </View>

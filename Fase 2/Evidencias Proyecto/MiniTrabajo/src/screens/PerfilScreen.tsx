@@ -120,7 +120,6 @@ export default function PerfilScreen() {
     cerrarCapaSuperior,
   } = usePerfil();
 
-
   // Mostrar el historial de compras.
   if (historialComprasVisible) {
     return (
@@ -171,7 +170,9 @@ export default function PerfilScreen() {
 
   const textoSaldo = cargandoPerfil
     ? "Actualizando saldo…"
-    : errorPerfil ? "Saldo sin actualizar" : `${perfil.creditos} créditos`;
+    : errorPerfil
+      ? "Saldo sin actualizar"
+      : `${perfil.creditos} créditos`;
 
   return (
     <View style={styles.screenWrapper}>
@@ -190,9 +191,7 @@ export default function PerfilScreen() {
         onEditar={() => {
           setTempNombre(perfil.nombre);
           setTempSobreMi(
-            perfil.sobre_mi === "Sin descripción aún."
-              ? ""
-              : perfil.sobre_mi,
+            perfil.sobre_mi === "Sin descripción aún." ? "" : perfil.sobre_mi,
           );
           setTempAvatarUri(perfil.avatar_url);
           setTempAvatarBase64(null);
@@ -227,9 +226,21 @@ export default function PerfilScreen() {
         <View style={{ flex: 1 }}>
           {/* MODAL 1: RESEÑAS */}
           <ActividadPerfil
-            visible={modalVisible === "resenas" || modalVisible === "historial" ? modalVisible : null}
-            resenas={{ datos: resenasRecibidas, estado: estadoResenasRecibidas, error: errorResenasRecibidas }}
-            historial={{ datos: historialTrabajos, estado: estadoHistorialTrabajos, error: errorHistorialTrabajos }}
+            visible={
+              modalVisible === "resenas" || modalVisible === "historial"
+                ? modalVisible
+                : null
+            }
+            resenas={{
+              datos: resenasRecibidas,
+              estado: estadoResenasRecibidas,
+              error: errorResenasRecibidas,
+            }}
+            historial={{
+              datos: historialTrabajos,
+              estado: estadoHistorialTrabajos,
+              error: errorHistorialTrabajos,
+            }}
             onCerrar={() => setModalVisible("ninguno")}
             onReintentarResenas={() => void recargarResenasPropias()}
             onReintentarHistorial={() => void recargarHistorialPropio()}
@@ -238,8 +249,7 @@ export default function PerfilScreen() {
                 {
                   trabajoId: item.id,
                   evaluadoId: item.solicitanteId,
-                  nombreContraparte:
-                    item.solicitanteNombre || "Empleador",
+                  nombreContraparte: item.solicitanteNombre || "Empleador",
                   rolContraparte: "empleador",
                   esFinalizacion: false,
                 },
@@ -304,11 +314,9 @@ export default function PerfilScreen() {
                 handleAbrirCalificar(
                   {
                     trabajoId: tareaSeleccionada.id,
-                    evaluadoId:
-                      tareaSeleccionada.trabajador_id || "",
+                    evaluadoId: tareaSeleccionada.trabajador_id || "",
                     nombreContraparte:
-                      tareaSeleccionada.trabajador_nombre ||
-                      "Trabajador",
+                      tareaSeleccionada.trabajador_nombre || "Trabajador",
                     rolContraparte: "trabajador",
                     esFinalizacion: true,
                   },
@@ -319,18 +327,18 @@ export default function PerfilScreen() {
                 handleAbrirCalificar(
                   {
                     trabajoId: tareaSeleccionada.id,
-                    evaluadoId:
-                      tareaSeleccionada.trabajador_id!,
+                    evaluadoId: tareaSeleccionada.trabajador_id!,
                     nombreContraparte:
-                      tareaSeleccionada.trabajador_nombre ||
-                      "Trabajador",
+                      tareaSeleccionada.trabajador_nombre || "Trabajador",
                     rolContraparte: "trabajador",
                     esFinalizacion: false,
                   },
                   "publicaciones",
                 );
               }}
-              onReintentar={() => void handleSeleccionarTarea(tareaSeleccionada)}
+              onReintentar={() =>
+                void handleSeleccionarTarea(tareaSeleccionada)
+              }
               onCancelarAcuerdo={handleCancelarAcuerdo}
               onVerPerfil={handleVerPerfilPostulante}
               onRechazar={handleRechazar}
@@ -344,8 +352,16 @@ export default function PerfilScreen() {
             <DetallePostulante
               postulante={postulanteDetalle}
               tab={tabPostulante}
-              resenas={{ datos: resenasPostulante, estado: estadoResenasPostulante, error: errorResenasPostulante }}
-              historial={{ datos: historialPostulante, estado: estadoHistorialPostulante, error: errorHistorialPostulante }}
+              resenas={{
+                datos: resenasPostulante,
+                estado: estadoResenasPostulante,
+                error: errorResenasPostulante,
+              }}
+              historial={{
+                datos: historialPostulante,
+                estado: estadoHistorialPostulante,
+                error: errorHistorialPostulante,
+              }}
               onCambiarTab={setTabPostulante}
               onCerrar={() => setPostulanteDetalle(null)}
               onReintentar={() => {
@@ -353,7 +369,9 @@ export default function PerfilScreen() {
                 if (tabPostulante === "resenas") {
                   void cargarResenasPostulante(postulanteDetalle.postulante_id);
                 } else {
-                  void cargarHistorialPostulante(postulanteDetalle.postulante_id);
+                  void cargarHistorialPostulante(
+                    postulanteDetalle.postulante_id,
+                  );
                 }
               }}
             />
@@ -375,38 +393,38 @@ export default function PerfilScreen() {
 
           {/* MODAL 4: EDICIÓN DE PERFIL */}
           <FormularioEdicionPerfil
-              visible={modalEditarVisible}
-              valores={{
-                nombre: tempNombre,
-                sobreMi: tempSobreMi,
-                avatarUri: tempAvatarUri,
-                comunaId: tempComunaId,
-                comunaNombre: tempComunaNombre,
-              }}
-              selectorComunas={{
-                visible: modalComunasVisible,
-                opciones: comunasDisponibles,
-                estado: estadoComunasPerfil,
-                error: errorComunasPerfil,
-              }}
-              guardando={guardandoCambios}
-              onCambiarNombre={setTempNombre}
-              onCambiarSobreMi={setTempSobreMi}
-              onElegirFoto={handlePickFoto}
-              onGuardar={handleGuardarPerfil}
-              onCerrar={() => setModalEditarVisible(false)}
-              onAbrirComunas={() => {
-                setModalComunasVisible(true);
-                void cargarComunasPerfil('catalogo');
-              }}
-              onCerrarComunas={() => setModalComunasVisible(false)}
-              onReintentarComunas={() => void cargarComunasPerfil('catalogo')}
-              onSeleccionarComuna={(comuna) => {
-                setTempComunaId(comuna.id);
-                setTempComunaNombre(comuna.nombre);
-                setModalComunasVisible(false);
-              }}
-            />
+            visible={modalEditarVisible}
+            valores={{
+              nombre: tempNombre,
+              sobreMi: tempSobreMi,
+              avatarUri: tempAvatarUri,
+              comunaId: tempComunaId,
+              comunaNombre: tempComunaNombre,
+            }}
+            selectorComunas={{
+              visible: modalComunasVisible,
+              opciones: comunasDisponibles,
+              estado: estadoComunasPerfil,
+              error: errorComunasPerfil,
+            }}
+            guardando={guardandoCambios}
+            onCambiarNombre={setTempNombre}
+            onCambiarSobreMi={setTempSobreMi}
+            onElegirFoto={handlePickFoto}
+            onGuardar={handleGuardarPerfil}
+            onCerrar={() => setModalEditarVisible(false)}
+            onAbrirComunas={() => {
+              setModalComunasVisible(true);
+              void cargarComunasPerfil("catalogo");
+            }}
+            onCerrarComunas={() => setModalComunasVisible(false)}
+            onReintentarComunas={() => void cargarComunasPerfil("catalogo")}
+            onSeleccionarComuna={(comuna) => {
+              setTempComunaId(comuna.id);
+              setTempComunaNombre(comuna.nombre);
+              setModalComunasVisible(false);
+            }}
+          />
 
           {/* MODAL 5: CRÉDITOS */}
           {modalVisible === "creditos" && (

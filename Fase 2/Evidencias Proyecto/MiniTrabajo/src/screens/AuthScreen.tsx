@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect } from "react";
 import {
   Text,
   View,
@@ -11,11 +11,11 @@ import {
   TouchableWithoutFeedback,
   Keyboard,
   Modal,
-} from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { supabase } from '../services/supabase';
-import { colors } from '../theme/colors';
-import { styles } from '../styles/AuthStyles';
+} from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+import { supabase } from "../services/supabase";
+import { colors } from "../theme/colors";
+import { styles } from "../styles/AuthStyles";
 import {
   limpiarRut,
   validarRutChileno,
@@ -24,7 +24,7 @@ import {
   validarTelefonoChileno,
   validarPassword,
   ResultadoPassword,
-} from '../utils/functionsAuth';
+} from "../utils/functionsAuth";
 
 interface ErroresCampos {
   nombre?: string;
@@ -36,12 +36,12 @@ interface ErroresCampos {
 
 export default function AuthScreen() {
   const [esRegistro, setEsRegistro] = useState(false);
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [mostrarPassword, setMostrarPassword] = useState(false);
-  const [nombre, setNombre] = useState('');
-  const [rut, setRut] = useState('');
-  const [telefono, setTelefono] = useState('');
+  const [nombre, setNombre] = useState("");
+  const [rut, setRut] = useState("");
+  const [telefono, setTelefono] = useState("");
   const [cargando, setCargando] = useState(false);
   const [tecladoVisible, setTecladoVisible] = useState(false);
 
@@ -50,42 +50,44 @@ export default function AuthScreen() {
 
   // Validación de contraseña en tiempo real
   const [estadoPassword, setEstadoPassword] = useState<ResultadoPassword>(
-    validarPassword('')
+    validarPassword(""),
   );
 
   // Modal 2FA (PIN de 6 dígitos)
   const [modalPinVisible, setModalPinVisible] = useState(false);
-  const [pinIngresado, setPinIngresado] = useState('');
+  const [pinIngresado, setPinIngresado] = useState("");
   const [errorPin, setErrorPin] = useState<string | null>(null);
   const [cargandoPin, setCargandoPin] = useState(false);
-  const [tipoOperacionPin, setTipoOperacionPin] = useState<'login' | 'registro' | null>(null);
+  const [tipoOperacionPin, setTipoOperacionPin] = useState<
+    "login" | "registro" | null
+  >(null);
 
   // Modal Recuperar Contraseña
   const [modalRecuperarVisible, setModalRecuperarVisible] = useState(false);
-  const [emailRecuperar, setEmailRecuperar] = useState('');
+  const [emailRecuperar, setEmailRecuperar] = useState("");
   const [cargandoRecuperar, setCargandoRecuperar] = useState(false);
 
   // Modal Feedback General (Dark theme)
   const [modalFeedback, setModalFeedback] = useState<{
     visible: boolean;
-    tipo: 'error' | 'exito';
+    tipo: "error" | "exito";
     titulo: string;
     mensaje: string;
   }>({
     visible: false,
-    tipo: 'error',
-    titulo: '',
-    mensaje: '',
+    tipo: "error",
+    titulo: "",
+    mensaje: "",
   });
 
   useEffect(() => {
     const showSub = Keyboard.addListener(
-      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
-      () => setTecladoVisible(true)
+      Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow",
+      () => setTecladoVisible(true),
     );
     const hideSub = Keyboard.addListener(
-      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
-      () => setTecladoVisible(false)
+      Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide",
+      () => setTecladoVisible(false),
     );
 
     return () => {
@@ -109,7 +111,7 @@ export default function AuthScreen() {
 
   const handleRutChange = (text: string) => {
     setErrores((prev) => ({ ...prev, rut: undefined }));
-    const soloDigitosYk = text.replace(/[^0-9kK]/g, '').toUpperCase();
+    const soloDigitosYk = text.replace(/[^0-9kK]/g, "").toUpperCase();
     if (soloDigitosYk.length <= 9) {
       setRut(soloDigitosYk);
     }
@@ -124,7 +126,7 @@ export default function AuthScreen() {
 
   const handleTelefonoChange = (text: string) => {
     setErrores((prev) => ({ ...prev, telefono: undefined }));
-    const soloNum = text.replace(/[^0-9]/g, '');
+    const soloNum = text.replace(/[^0-9]/g, "");
     if (soloNum.length <= 8) {
       setTelefono(soloNum);
     }
@@ -135,8 +137,8 @@ export default function AuthScreen() {
     Keyboard.dismiss();
     const nuevosErrores: ErroresCampos = {};
 
-    if (!email.trim()) nuevosErrores.email = 'Ingresa tu correo';
-    if (!password.trim()) nuevosErrores.password = 'Ingresa tu contraseña';
+    if (!email.trim()) nuevosErrores.email = "Ingresa tu correo";
+    if (!password.trim()) nuevosErrores.password = "Ingresa tu contraseña";
 
     if (Object.keys(nuevosErrores).length > 0) {
       setErrores(nuevosErrores);
@@ -149,16 +151,16 @@ export default function AuthScreen() {
       const response = await fetch(
         `${process.env.EXPO_PUBLIC_SUPABASE_URL}/auth/v1/token?grant_type=password`,
         {
-          method: 'POST',
+          method: "POST",
           headers: {
-            'Content-Type': 'application/json',
-            apikey: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '',
+            "Content-Type": "application/json",
+            apikey: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || "",
           },
           body: JSON.stringify({
             email: email.trim().toLowerCase(),
             password: password,
           }),
-        }
+        },
       );
 
       const resData = await response.json();
@@ -167,24 +169,26 @@ export default function AuthScreen() {
       if (!response.ok || resData.error) {
         setModalFeedback({
           visible: true,
-          tipo: 'error',
-          titulo: 'Datos incorrectos',
-          mensaje: 'El correo o la contraseña no coinciden con ninguna cuenta registrada.',
+          tipo: "error",
+          titulo: "Datos incorrectos",
+          mensaje:
+            "El correo o la contraseña no coinciden con ninguna cuenta registrada.",
         });
         return;
       }
 
-      setTipoOperacionPin('login');
-      setPinIngresado('');
+      setTipoOperacionPin("login");
+      setPinIngresado("");
       setErrorPin(null);
       setModalPinVisible(true);
     } catch {
       setCargando(false);
       setModalFeedback({
         visible: true,
-        tipo: 'error',
-        titulo: 'Error de conexión',
-        mensaje: 'No se pudo verificar la cuenta. Revisa tu conexión a internet.',
+        tipo: "error",
+        titulo: "Error de conexión",
+        mensaje:
+          "No se pudo verificar la cuenta. Revisa tu conexión a internet.",
       });
     }
   };
@@ -198,32 +202,32 @@ export default function AuthScreen() {
     const emailNormalizado = email.trim().toLowerCase();
 
     if (!nombre.trim()) {
-      nuevosErrores.nombre = 'El nombre es obligatorio';
+      nuevosErrores.nombre = "El nombre es obligatorio";
     } else if (nombre.trim().length > 80) {
-      nuevosErrores.nombre = 'El nombre puede tener como máximo 80 caracteres';
+      nuevosErrores.nombre = "El nombre puede tener como máximo 80 caracteres";
     }
 
     if (!rutLimpio) {
-      nuevosErrores.rut = 'Ingresa tu RUT';
+      nuevosErrores.rut = "Ingresa tu RUT";
     } else if (!validarRutChileno(rutLimpio)) {
-      nuevosErrores.rut = 'RUT inválido (revisa dígito verificador)';
+      nuevosErrores.rut = "RUT inválido (revisa dígito verificador)";
     }
 
     if (!telefono.trim()) {
-      nuevosErrores.telefono = 'Ingresa tu número telefónico';
+      nuevosErrores.telefono = "Ingresa tu número telefónico";
     } else if (!validarTelefonoChileno(telefono)) {
-      nuevosErrores.telefono = 'Deben ser 8 dígitos (ej: 1234 5678)';
+      nuevosErrores.telefono = "Deben ser 8 dígitos (ej: 1234 5678)";
     }
 
     if (!emailNormalizado) {
-      nuevosErrores.email = 'Ingresa tu correo electrónico';
+      nuevosErrores.email = "Ingresa tu correo electrónico";
     } else if (!/\S+@\S+\.\S+/.test(emailNormalizado)) {
-      nuevosErrores.email = 'Formato de correo no válido';
+      nuevosErrores.email = "Formato de correo no válido";
     }
 
     const checkPass = validarPassword(password);
     if (!checkPass.esValida) {
-      nuevosErrores.password = 'La contraseña no cumple con los requisitos';
+      nuevosErrores.password = "La contraseña no cumple con los requisitos";
     }
 
     if (Object.keys(nuevosErrores).length > 0) {
@@ -233,8 +237,8 @@ export default function AuthScreen() {
 
     // La base de datos valida la unicidad al crear la cuenta.
     // No consultamos si los datos pertenecen a otra persona.
-    setTipoOperacionPin('registro');
-    setPinIngresado('');
+    setTipoOperacionPin("registro");
+    setPinIngresado("");
     setErrorPin(null);
     setModalPinVisible(true);
   };
@@ -242,18 +246,18 @@ export default function AuthScreen() {
   // 3. CONFIRMAR PIN
   const handleConfirmarPin = async () => {
     if (pinIngresado.length !== 6) {
-      setErrorPin('Debes ingresar los 6 dígitos del PIN.');
+      setErrorPin("Debes ingresar los 6 dígitos del PIN.");
       return;
     }
 
-    if (pinIngresado !== '123456') {
-      setErrorPin('PIN incorrecto. Usa 123456 para la prueba.');
+    if (pinIngresado !== "123456") {
+      setErrorPin("PIN incorrecto. Usa 123456 para la prueba.");
       return;
     }
 
     setCargandoPin(true);
 
-    if (tipoOperacionPin === 'login') {
+    if (tipoOperacionPin === "login") {
       const { error } = await supabase.auth.signInWithPassword({
         email: email.trim().toLowerCase(),
         password: password,
@@ -262,11 +266,11 @@ export default function AuthScreen() {
       setCargandoPin(false);
 
       if (error) {
-        setErrorPin('No se pudo autorizar la sesión.');
+        setErrorPin("No se pudo autorizar la sesión.");
       } else {
         setModalPinVisible(false);
       }
-    } else if (tipoOperacionPin === 'registro') {
+    } else if (tipoOperacionPin === "registro") {
       const rutFormateado = formatearRutFinal(limpiarRut(rut));
       const telefonoEstandarizado = estandarizarTelefonoChileno(telefono);
 
@@ -290,9 +294,10 @@ export default function AuthScreen() {
         setModalPinVisible(false);
         setModalFeedback({
           visible: true,
-          tipo: 'error',
-          titulo: 'No se pudo crear la cuenta',
-          mensaje: 'No pudimos completar el registro. Revisa tus datos o intenta recuperar el acceso si ya tienes una cuenta.',
+          tipo: "error",
+          titulo: "No se pudo crear la cuenta",
+          mensaje:
+            "No pudimos completar el registro. Revisa tus datos o intenta recuperar el acceso si ya tienes una cuenta.",
         });
       } else {
         setModalPinVisible(false);
@@ -308,15 +313,17 @@ export default function AuthScreen() {
     if (!emailRecuperar.trim()) {
       setModalFeedback({
         visible: true,
-        tipo: 'error',
-        titulo: 'Correo requerido',
-        mensaje: 'Ingresa tu correo para enviarte el enlace de recuperación.',
+        tipo: "error",
+        titulo: "Correo requerido",
+        mensaje: "Ingresa tu correo para enviarte el enlace de recuperación.",
       });
       return;
     }
 
     setCargandoRecuperar(true);
-    const { error } = await supabase.auth.resetPasswordForEmail(emailRecuperar.trim());
+    const { error } = await supabase.auth.resetPasswordForEmail(
+      emailRecuperar.trim(),
+    );
     setCargandoRecuperar(false);
 
     setModalRecuperarVisible(false);
@@ -324,16 +331,16 @@ export default function AuthScreen() {
     if (error) {
       setModalFeedback({
         visible: true,
-        tipo: 'error',
-        titulo: 'Error al enviar',
+        tipo: "error",
+        titulo: "Error al enviar",
         mensaje: error.message,
       });
     } else {
       setModalFeedback({
         visible: true,
-        tipo: 'exito',
-        titulo: 'Enlace enviado',
-        mensaje: 'Revisa tu bandeja de entrada para restablecer tu contraseña.',
+        tipo: "exito",
+        titulo: "Enlace enviado",
+        mensaje: "Revisa tu bandeja de entrada para restablecer tu contraseña.",
       });
     }
   };
@@ -341,7 +348,7 @@ export default function AuthScreen() {
   return (
     <View style={styles.container}>
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
         style={styles.keyboardContainer}
       >
         <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
@@ -359,26 +366,44 @@ export default function AuthScreen() {
               </View>
               <Text style={styles.title}>Mini-Trabajo</Text>
               <Text style={styles.subtitle}>
-                {esRegistro ? 'Crea tu perfil laboral y empieza hoy' : 'Conecta con oportunidades y servicios'}
+                {esRegistro
+                  ? "Crea tu perfil laboral y empieza hoy"
+                  : "Conecta con oportunidades y servicios"}
               </Text>
             </View>
 
             <View style={styles.segmentContainer}>
               <TouchableOpacity
-                style={[styles.segmentBtn, !esRegistro && styles.segmentBtnActive]}
+                style={[
+                  styles.segmentBtn,
+                  !esRegistro && styles.segmentBtnActive,
+                ]}
                 onPress={() => handleCambiarTab(false)}
                 activeOpacity={0.8}
               >
-                <Text style={[styles.segmentText, !esRegistro && styles.segmentTextActive]}>
+                <Text
+                  style={[
+                    styles.segmentText,
+                    !esRegistro && styles.segmentTextActive,
+                  ]}
+                >
                   Iniciar Sesión
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.segmentBtn, esRegistro && styles.segmentBtnActive]}
+                style={[
+                  styles.segmentBtn,
+                  esRegistro && styles.segmentBtnActive,
+                ]}
                 onPress={() => handleCambiarTab(true)}
                 activeOpacity={0.8}
               >
-                <Text style={[styles.segmentText, esRegistro && styles.segmentTextActive]}>
+                <Text
+                  style={[
+                    styles.segmentText,
+                    esRegistro && styles.segmentTextActive,
+                  ]}
+                >
                   Registrarse
                 </Text>
               </TouchableOpacity>
@@ -392,14 +417,21 @@ export default function AuthScreen() {
                     <View
                       style={[
                         styles.inputWrapper,
-                        campoEnfocado === 'nombre' && styles.inputWrapperFocused,
+                        campoEnfocado === "nombre" &&
+                          styles.inputWrapperFocused,
                         errores.nombre ? styles.inputWrapperError : null,
                       ]}
                     >
                       <Ionicons
                         name="person-outline"
                         size={18}
-                        color={errores.nombre ? '#ef4444' : campoEnfocado === 'nombre' ? colors.accentBlue : colors.textMuted}
+                        color={
+                          errores.nombre
+                            ? "#ef4444"
+                            : campoEnfocado === "nombre"
+                              ? colors.accentBlue
+                              : colors.textMuted
+                        }
                         style={styles.inputIcon}
                       />
                       <TextInput
@@ -412,11 +444,15 @@ export default function AuthScreen() {
                           setErrores((p) => ({ ...p, nombre: undefined }));
                           setNombre(t);
                         }}
-                        onFocus={() => setCampoEnfocado('nombre')}
+                        onFocus={() => setCampoEnfocado("nombre")}
                         onBlur={() => setCampoEnfocado(null)}
                       />
                     </View>
-                    {errores.nombre && <Text style={styles.fieldErrorText}>{errores.nombre}</Text>}
+                    {errores.nombre && (
+                      <Text style={styles.fieldErrorText}>
+                        {errores.nombre}
+                      </Text>
+                    )}
                   </View>
 
                   <View style={styles.inputGroup}>
@@ -424,14 +460,20 @@ export default function AuthScreen() {
                     <View
                       style={[
                         styles.inputWrapper,
-                        campoEnfocado === 'rut' && styles.inputWrapperFocused,
+                        campoEnfocado === "rut" && styles.inputWrapperFocused,
                         errores.rut ? styles.inputWrapperError : null,
                       ]}
                     >
                       <Ionicons
                         name="card-outline"
                         size={18}
-                        color={errores.rut ? '#ef4444' : campoEnfocado === 'rut' ? colors.accentBlue : colors.textMuted}
+                        color={
+                          errores.rut
+                            ? "#ef4444"
+                            : campoEnfocado === "rut"
+                              ? colors.accentBlue
+                              : colors.textMuted
+                        }
                         style={styles.inputIcon}
                       />
                       <TextInput
@@ -440,29 +482,40 @@ export default function AuthScreen() {
                         placeholderTextColor={colors.textMuted}
                         value={rut}
                         onChangeText={handleRutChange}
-                        onFocus={() => setCampoEnfocado('rut')}
+                        onFocus={() => setCampoEnfocado("rut")}
                         onBlur={handleBlurRut}
                         autoCapitalize="characters"
                         autoCorrect={false}
                         maxLength={10}
                       />
                     </View>
-                    {errores.rut && <Text style={styles.fieldErrorText}>{errores.rut}</Text>}
+                    {errores.rut && (
+                      <Text style={styles.fieldErrorText}>{errores.rut}</Text>
+                    )}
                   </View>
 
                   <View style={styles.inputGroup}>
-                    <Text style={styles.label}>Teléfono de contacto / WhatsApp *</Text>
+                    <Text style={styles.label}>
+                      Teléfono de contacto / WhatsApp *
+                    </Text>
                     <View
                       style={[
                         styles.inputWrapper,
-                        campoEnfocado === 'telefono' && styles.inputWrapperFocused,
+                        campoEnfocado === "telefono" &&
+                          styles.inputWrapperFocused,
                         errores.telefono ? styles.inputWrapperError : null,
                       ]}
                     >
                       <Ionicons
                         name="call-outline"
                         size={18}
-                        color={errores.telefono ? '#ef4444' : campoEnfocado === 'telefono' ? colors.accentBlue : colors.textMuted}
+                        color={
+                          errores.telefono
+                            ? "#ef4444"
+                            : campoEnfocado === "telefono"
+                              ? colors.accentBlue
+                              : colors.textMuted
+                        }
                         style={styles.inputIcon}
                       />
                       <View style={styles.phonePrefixBadge}>
@@ -474,14 +527,18 @@ export default function AuthScreen() {
                         placeholderTextColor={colors.textMuted}
                         value={telefono}
                         onChangeText={handleTelefonoChange}
-                        onFocus={() => setCampoEnfocado('telefono')}
+                        onFocus={() => setCampoEnfocado("telefono")}
                         onBlur={() => setCampoEnfocado(null)}
                         keyboardType="number-pad"
                         maxLength={8}
                         autoCorrect={false}
                       />
                     </View>
-                    {errores.telefono && <Text style={styles.fieldErrorText}>{errores.telefono}</Text>}
+                    {errores.telefono && (
+                      <Text style={styles.fieldErrorText}>
+                        {errores.telefono}
+                      </Text>
+                    )}
                   </View>
                 </>
               )}
@@ -491,14 +548,20 @@ export default function AuthScreen() {
                 <View
                   style={[
                     styles.inputWrapper,
-                    campoEnfocado === 'email' && styles.inputWrapperFocused,
+                    campoEnfocado === "email" && styles.inputWrapperFocused,
                     errores.email ? styles.inputWrapperError : null,
                   ]}
                 >
                   <Ionicons
                     name="mail-outline"
                     size={18}
-                    color={errores.email ? '#ef4444' : campoEnfocado === 'email' ? colors.accentBlue : colors.textMuted}
+                    color={
+                      errores.email
+                        ? "#ef4444"
+                        : campoEnfocado === "email"
+                          ? colors.accentBlue
+                          : colors.textMuted
+                    }
                     style={styles.inputIcon}
                   />
                   <TextInput
@@ -510,40 +573,50 @@ export default function AuthScreen() {
                       setErrores((p) => ({ ...p, email: undefined }));
                       setEmail(t);
                     }}
-                    onFocus={() => setCampoEnfocado('email')}
+                    onFocus={() => setCampoEnfocado("email")}
                     onBlur={() => setCampoEnfocado(null)}
                     autoCapitalize="none"
                     autoCorrect={false}
                     keyboardType="email-address"
                   />
                 </View>
-                {errores.email && <Text style={styles.fieldErrorText}>{errores.email}</Text>}
+                {errores.email && (
+                  <Text style={styles.fieldErrorText}>{errores.email}</Text>
+                )}
               </View>
 
               <View style={styles.inputGroup}>
                 <Text style={styles.label}>
-                  {esRegistro ? 'Contraseña segura *' : 'Contraseña *'}
+                  {esRegistro ? "Contraseña segura *" : "Contraseña *"}
                 </Text>
                 <View
                   style={[
                     styles.inputWrapper,
-                    campoEnfocado === 'password' && styles.inputWrapperFocused,
+                    campoEnfocado === "password" && styles.inputWrapperFocused,
                     errores.password ? styles.inputWrapperError : null,
                   ]}
                 >
                   <Ionicons
                     name="lock-closed-outline"
                     size={18}
-                    color={errores.password ? '#ef4444' : campoEnfocado === 'password' ? colors.accentBlue : colors.textMuted}
+                    color={
+                      errores.password
+                        ? "#ef4444"
+                        : campoEnfocado === "password"
+                          ? colors.accentBlue
+                          : colors.textMuted
+                    }
                     style={styles.inputIcon}
                   />
                   <TextInput
                     style={styles.input}
-                    placeholder={esRegistro ? 'Crea tu contraseña' : 'Tu contraseña'}
+                    placeholder={
+                      esRegistro ? "Crea tu contraseña" : "Tu contraseña"
+                    }
                     placeholderTextColor={colors.textMuted}
                     value={password}
                     onChangeText={handlePasswordChange}
-                    onFocus={() => setCampoEnfocado('password')}
+                    onFocus={() => setCampoEnfocado("password")}
                     onBlur={() => setCampoEnfocado(null)}
                     secureTextEntry={!mostrarPassword}
                     autoCapitalize="none"
@@ -555,54 +628,111 @@ export default function AuthScreen() {
                     activeOpacity={0.7}
                   >
                     <Ionicons
-                      name={mostrarPassword ? 'eye-outline' : 'eye-off-outline'}
+                      name={mostrarPassword ? "eye-outline" : "eye-off-outline"}
                       size={20}
                       color={colors.textMuted}
                     />
                   </TouchableOpacity>
                 </View>
 
-                {errores.password && <Text style={styles.fieldErrorText}>{errores.password}</Text>}
+                {errores.password && (
+                  <Text style={styles.fieldErrorText}>{errores.password}</Text>
+                )}
 
                 {esRegistro && password.length > 0 && (
                   <View style={styles.reqContainer}>
                     <View style={styles.reqRow}>
                       <Ionicons
-                        name={estadoPassword.reglas.longitudMinima ? 'checkmark-circle' : 'ellipse-outline'}
+                        name={
+                          estadoPassword.reglas.longitudMinima
+                            ? "checkmark-circle"
+                            : "ellipse-outline"
+                        }
                         size={14}
-                        color={estadoPassword.reglas.longitudMinima ? '#22c55e' : colors.textMuted}
+                        color={
+                          estadoPassword.reglas.longitudMinima
+                            ? "#22c55e"
+                            : colors.textMuted
+                        }
                       />
-                      <Text style={[styles.reqText, estadoPassword.reglas.longitudMinima && styles.reqTextOk]}>
+                      <Text
+                        style={[
+                          styles.reqText,
+                          estadoPassword.reglas.longitudMinima &&
+                            styles.reqTextOk,
+                        ]}
+                      >
                         Mínimo 8 caracteres
                       </Text>
                     </View>
                     <View style={styles.reqRow}>
                       <Ionicons
-                        name={estadoPassword.reglas.tieneMayuscula ? 'checkmark-circle' : 'ellipse-outline'}
+                        name={
+                          estadoPassword.reglas.tieneMayuscula
+                            ? "checkmark-circle"
+                            : "ellipse-outline"
+                        }
                         size={14}
-                        color={estadoPassword.reglas.tieneMayuscula ? '#22c55e' : colors.textMuted}
+                        color={
+                          estadoPassword.reglas.tieneMayuscula
+                            ? "#22c55e"
+                            : colors.textMuted
+                        }
                       />
-                      <Text style={[styles.reqText, estadoPassword.reglas.tieneMayuscula && styles.reqTextOk]}>
+                      <Text
+                        style={[
+                          styles.reqText,
+                          estadoPassword.reglas.tieneMayuscula &&
+                            styles.reqTextOk,
+                        ]}
+                      >
                         Al menos una mayúscula (A-Z)
                       </Text>
                     </View>
                     <View style={styles.reqRow}>
                       <Ionicons
-                        name={estadoPassword.reglas.tieneMinuscula ? 'checkmark-circle' : 'ellipse-outline'}
+                        name={
+                          estadoPassword.reglas.tieneMinuscula
+                            ? "checkmark-circle"
+                            : "ellipse-outline"
+                        }
                         size={14}
-                        color={estadoPassword.reglas.tieneMinuscula ? '#22c55e' : colors.textMuted}
+                        color={
+                          estadoPassword.reglas.tieneMinuscula
+                            ? "#22c55e"
+                            : colors.textMuted
+                        }
                       />
-                      <Text style={[styles.reqText, estadoPassword.reglas.tieneMinuscula && styles.reqTextOk]}>
+                      <Text
+                        style={[
+                          styles.reqText,
+                          estadoPassword.reglas.tieneMinuscula &&
+                            styles.reqTextOk,
+                        ]}
+                      >
                         Al menos una minúscula (a-z)
                       </Text>
                     </View>
                     <View style={styles.reqRow}>
                       <Ionicons
-                        name={estadoPassword.reglas.tieneNumero ? 'checkmark-circle' : 'ellipse-outline'}
+                        name={
+                          estadoPassword.reglas.tieneNumero
+                            ? "checkmark-circle"
+                            : "ellipse-outline"
+                        }
                         size={14}
-                        color={estadoPassword.reglas.tieneNumero ? '#22c55e' : colors.textMuted}
+                        color={
+                          estadoPassword.reglas.tieneNumero
+                            ? "#22c55e"
+                            : colors.textMuted
+                        }
                       />
-                      <Text style={[styles.reqText, estadoPassword.reglas.tieneNumero && styles.reqTextOk]}>
+                      <Text
+                        style={[
+                          styles.reqText,
+                          estadoPassword.reglas.tieneNumero && styles.reqTextOk,
+                        ]}
+                      >
                         Al menos un número (0-9)
                       </Text>
                     </View>
@@ -621,10 +751,10 @@ export default function AuthScreen() {
                 ) : (
                   <View style={styles.btnContent}>
                     <Text style={styles.btnSubmitText}>
-                      {esRegistro ? 'Crear mi cuenta' : 'Iniciar Sesión'}
+                      {esRegistro ? "Crear mi cuenta" : "Iniciar Sesión"}
                     </Text>
                     <Ionicons
-                      name={esRegistro ? 'arrow-forward' : 'log-in-outline'}
+                      name={esRegistro ? "arrow-forward" : "log-in-outline"}
                       size={18}
                       color="#ffffff"
                     />
@@ -638,7 +768,9 @@ export default function AuthScreen() {
                   onPress={() => setModalRecuperarVisible(true)}
                   activeOpacity={0.7}
                 >
-                  <Text style={styles.forgotBtnText}>¿Olvidaste tu contraseña?</Text>
+                  <Text style={styles.forgotBtnText}>
+                    ¿Olvidaste tu contraseña?
+                  </Text>
                 </TouchableOpacity>
               )}
             </View>
@@ -655,15 +787,24 @@ export default function AuthScreen() {
       >
         <View style={styles.modalBackdrop}>
           <View style={styles.feedbackCard}>
-            <View style={[styles.feedbackIconWrap, { backgroundColor: 'rgba(59, 130, 246, 0.12)' }]}>
-              <Ionicons name="key-outline" size={32} color={colors.accentBlue} />
+            <View
+              style={[
+                styles.feedbackIconWrap,
+                { backgroundColor: "rgba(59, 130, 246, 0.12)" },
+              ]}
+            >
+              <Ionicons
+                name="key-outline"
+                size={32}
+                color={colors.accentBlue}
+              />
             </View>
 
             <Text style={styles.feedbackTitle}>Verificación en 2 Pasos</Text>
             <Text style={styles.feedbackMsg}>
-              {tipoOperacionPin === 'registro'
-                ? 'Los campos tienen un formato válido. Ingresa el PIN de prueba (6 dígitos) para solicitar la creación de tu cuenta.'
-                : 'Credenciales correctas. Ingresa tu código PIN de seguridad (6 dígitos) para completar el inicio de sesión.'}
+              {tipoOperacionPin === "registro"
+                ? "Los campos tienen un formato válido. Ingresa el PIN de prueba (6 dígitos) para solicitar la creación de tu cuenta."
+                : "Credenciales correctas. Ingresa tu código PIN de seguridad (6 dígitos) para completar el inicio de sesión."}
             </Text>
 
             <TextInput
@@ -681,14 +822,29 @@ export default function AuthScreen() {
               autoFocus={true}
             />
 
-            {errorPin && <Text style={[styles.fieldErrorText, { marginBottom: 12 }]}>{errorPin}</Text>}
+            {errorPin && (
+              <Text style={[styles.fieldErrorText, { marginBottom: 12 }]}>
+                {errorPin}
+              </Text>
+            )}
 
-            <View style={{ flexDirection: 'row', gap: 10, width: '100%', marginTop: 8 }}>
+            <View
+              style={{
+                flexDirection: "row",
+                gap: 10,
+                width: "100%",
+                marginTop: 8,
+              }}
+            >
               <TouchableOpacity
                 style={[styles.btnModalOkError, { flex: 1 }]}
                 onPress={handleCancelarPin}
               >
-                <Text style={{ color: colors.textSecondary, fontWeight: '600' }}>Cancelar</Text>
+                <Text
+                  style={{ color: colors.textSecondary, fontWeight: "600" }}
+                >
+                  Cancelar
+                </Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.btnModalOkExito, { flex: 2 }]}
@@ -715,17 +871,32 @@ export default function AuthScreen() {
       >
         <View style={styles.modalBackdrop}>
           <View style={styles.feedbackCard}>
-            <View style={[styles.feedbackIconWrap, { backgroundColor: 'rgba(56, 189, 248, 0.12)' }]}>
-              <Ionicons name="mail-unread-outline" size={32} color={colors.accentBlue} />
+            <View
+              style={[
+                styles.feedbackIconWrap,
+                { backgroundColor: "rgba(56, 189, 248, 0.12)" },
+              ]}
+            >
+              <Ionicons
+                name="mail-unread-outline"
+                size={32}
+                color={colors.accentBlue}
+              />
             </View>
 
             <Text style={styles.feedbackTitle}>Recuperar Contraseña</Text>
             <Text style={styles.feedbackMsg}>
-              Ingresa tu correo registrado para enviarte las instrucciones de restablecimiento.
+              Ingresa tu correo registrado para enviarte las instrucciones de
+              restablecimiento.
             </Text>
 
             <View style={styles.recuperarInputWrapper}>
-              <Ionicons name="mail-outline" size={18} color={colors.textMuted} style={{ marginRight: 8 }} />
+              <Ionicons
+                name="mail-outline"
+                size={18}
+                color={colors.textMuted}
+                style={{ marginRight: 8 }}
+              />
               <TextInput
                 style={styles.recuperarInput}
                 placeholder="tu@correo.cl"
@@ -737,12 +908,23 @@ export default function AuthScreen() {
               />
             </View>
 
-            <View style={{ flexDirection: 'row', gap: 10, width: '100%', marginTop: 8 }}>
+            <View
+              style={{
+                flexDirection: "row",
+                gap: 10,
+                width: "100%",
+                marginTop: 8,
+              }}
+            >
               <TouchableOpacity
                 style={[styles.btnModalOkError, { flex: 1 }]}
                 onPress={() => setModalRecuperarVisible(false)}
               >
-                <Text style={{ color: colors.textSecondary, fontWeight: '600' }}>Cancelar</Text>
+                <Text
+                  style={{ color: colors.textSecondary, fontWeight: "600" }}
+                >
+                  Cancelar
+                </Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.btnModalOkExito, { flex: 2 }]}
@@ -765,22 +947,28 @@ export default function AuthScreen() {
         animationType="fade"
         transparent={true}
         visible={modalFeedback.visible}
-        onRequestClose={() => setModalFeedback((prev) => ({ ...prev, visible: false }))}
+        onRequestClose={() =>
+          setModalFeedback((prev) => ({ ...prev, visible: false }))
+        }
       >
         <View style={styles.modalBackdrop}>
           <View style={styles.feedbackCard}>
             <View
               style={[
                 styles.feedbackIconWrap,
-                modalFeedback.tipo === 'error'
+                modalFeedback.tipo === "error"
                   ? styles.feedbackIconError
                   : styles.feedbackIconExito,
               ]}
             >
               <Ionicons
-                name={modalFeedback.tipo === 'error' ? 'alert-circle' : 'checkmark-circle'}
+                name={
+                  modalFeedback.tipo === "error"
+                    ? "alert-circle"
+                    : "checkmark-circle"
+                }
                 size={34}
-                color={modalFeedback.tipo === 'error' ? '#ef4444' : '#22c55e'}
+                color={modalFeedback.tipo === "error" ? "#ef4444" : "#22c55e"}
               />
             </View>
 
@@ -790,12 +978,14 @@ export default function AuthScreen() {
             <TouchableOpacity
               style={[
                 styles.btnModalOk,
-                modalFeedback.tipo === 'error'
+                modalFeedback.tipo === "error"
                   ? styles.btnModalOkError
                   : styles.btnModalOkExito,
               ]}
               activeOpacity={0.85}
-              onPress={() => setModalFeedback((prev) => ({ ...prev, visible: false }))}
+              onPress={() =>
+                setModalFeedback((prev) => ({ ...prev, visible: false }))
+              }
             >
               <Text style={styles.btnModalOkText}>Entendido</Text>
             </TouchableOpacity>
