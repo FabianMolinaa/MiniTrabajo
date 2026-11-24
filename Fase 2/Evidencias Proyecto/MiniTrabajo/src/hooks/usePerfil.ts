@@ -2,6 +2,7 @@ import { useState, useCallback, useRef, useEffect } from "react";
 import { useFocusEffect } from "@react-navigation/native";
 import * as ImagePicker from "expo-image-picker";
 import { supabase } from "../services/supabase";
+import { desactivarPushDelDispositivo } from "../services/pushNotificaciones";
 import { abrirWhatsAppTrabajo } from "../services/contactos";
 import { editarTrabajoPropio, eliminarTrabajoPropio, cancelarAcuerdoTrabajador, fetchPublicacionesUsuario, fetchHistorialTrabajosHechos, type MiPublicacion, type TrabajoRealizadoItem } from "../services/trabajos";
 import { fetchPostulantesDeTarea, aceptarPostulante, rechazarPostulacion, type PostulanteBD } from "../services/postulaciones";
@@ -186,6 +187,8 @@ export function usePerfil() {
     setCerrandoSesion(true);
 
     try {
+      // Desvincular el dispositivo para que no reciba push de esta cuenta.
+      await desactivarPushDelDispositivo();
       const { error } = await supabase.auth.signOut();
       if (error) throw error;
       // App responde a SIGNED_OUT y desmonta las pantallas de la cuenta.

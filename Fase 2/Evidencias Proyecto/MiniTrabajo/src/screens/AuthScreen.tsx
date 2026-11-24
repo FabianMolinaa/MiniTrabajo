@@ -14,6 +14,7 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { supabase } from "../services/supabase";
+import { solicitarCodigo2FA, verificarCodigo2FA } from "../services/auth2FA";
 import { colors } from "../theme/colors";
 import { styles } from "../styles/AuthStyles";
 import {
@@ -61,6 +62,8 @@ export default function AuthScreen() {
   const [tipoOperacionPin, setTipoOperacionPin] = useState<
     "login" | "registro" | null
   >(null);
+  const [segundosReenvio, setSegundosReenvio] = useState(0);
+  const [reenviandoCodigo, setReenviandoCodigo] = useState(false);
 
   // Modal Recuperar Contraseña
   const [modalRecuperarVisible, setModalRecuperarVisible] = useState(false);
@@ -95,6 +98,28 @@ export default function AuthScreen() {
       hideSub.remove();
     };
   }, []);
+
+  // Temporizador para reenvío de código 2FA
+  useEffect(() => {
+    if (segundosReenvio <= 0) return;
+    const interval = setInterval(() => {
+      setSegundosReenvio((prev) => (prev > 0 ? prev - 1 : 0));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [segundosReenvio]);
+
+  const handleReenviarCodigo = async () => {
+    if (segundosReenvio > 0 || reenviandoCodigo) return;
+    setReenviandoCodigo(true);
+    setErrorPin(null);
+    const resp = await solicitarCodigo2FA(email, tipoOperacionPin ?? "login");
+    setReenviandoCodigo(false);
+    if (!resp.ok) {
+      setErrorPin(resp.error ?? "No se pudo reenviar el código.");
+    } else {
+      setSegundosReenvio(60);
+    }
+  };
 
   const handleCambiarTab = (registro: boolean) => {
     setEsRegistro(registro);
@@ -167,6 +192,7 @@ export default function AuthScreen() {
       setCargando(false);
 
       if (!response.ok || resData.error) {
+        setCargando(false);
         setModalFeedback({
           visible: true,
           tipo: "error",
@@ -177,9 +203,26 @@ export default function AuthScreen() {
         return;
       }
 
+      // Enviar código 2FA con Brevo a través de Supabase
+      const resp2FA = await solicitarCodigo2FA(email, "login");
+      setCargando(false);
+
+      if (!resp2FA.ok) {
+        setModalFeedback({
+          visible: true,
+          tipo: "error",
+          titulo: "Verificación de seguridad",
+          mensaje:
+            resp2FA.error ??
+            "No pudimos enviar el código de verificación a tu correo.",
+        });
+        return;
+      }
+
       setTipoOperacionPin("login");
       setPinIngresado("");
       setErrorPin(null);
+      setSegundosReenvio(60);
       setModalPinVisible(true);
     } catch {
       setCargando(false);
@@ -235,27 +278,52 @@ export default function AuthScreen() {
       return;
     }
 
-    // La base de datos valida la unicidad al crear la cuenta.
-    // No consultamos si los datos pertenecen a otra persona.
+    // Enviar código 2FA de validación de correo con Brevo
+    setCargando(true);
+    const resp2FA = await solicitarCodigo2FA(email, "registro");
+    setCargando(false);
+
+    if (!resp2FA.ok) {
+      setModalFeedback({
+        visible: true,
+        tipo: "error",
+        titulo: "Verificación de seguridad",
+        mensaje:
+          resp2FA.error ??
+          "No pudimos enviar el código de verificación para el registro.",
+      });
+      return;
+    }
+
     setTipoOperacionPin("registro");
     setPinIngresado("");
     setErrorPin(null);
+    setSegundosReenvio(60);
     setModalPinVisible(true);
   };
 
   // 3. CONFIRMAR PIN
   const handleConfirmarPin = async () => {
-    if (pinIngresado.length !== 6) {
-      setErrorPin("Debes ingresar los 6 dígitos del PIN.");
-      return;
-    }
-
-    if (pinIngresado !== "123456") {
-      setErrorPin("PIN incorrecto. Usa 123456 para la prueba.");
+    if (pinIngresado.trim().length !== 6) {
+      setErrorPin("Debes ingresar los 6 dígitos del código.");
       return;
     }
 
     setCargandoPin(true);
+    setErrorPin(null);
+
+    // Validar código contra Supabase / Brevo
+    const validacion = await verificarCodigo2FA(
+      email,
+      pinIngresado,
+      tipoOperacionPin ?? "login",
+    );
+
+    if (!validacion.valido) {
+      setCargandoPin(false);
+      setErrorPin(validacion.error ?? "Código incorrecto o expirado.");
+      return;
+    }
 
     if (tipoOperacionPin === "login") {
       const { error } = await supabase.auth.signInWithPassword({
@@ -266,7 +334,7 @@ export default function AuthScreen() {
       setCargandoPin(false);
 
       if (error) {
-        setErrorPin("No se pudo autorizar la sesión.");
+        setErrorPin("No se pudo autorizar la sesión. Inténtalo nuevamente.");
       } else {
         setModalPinVisible(false);
       }
@@ -802,31 +870,58 @@ export default function AuthScreen() {
 
             <Text style={styles.feedbackTitle}>Verificación en 2 Pasos</Text>
             <Text style={styles.feedbackMsg}>
-              {tipoOperacionPin === "registro"
-                ? "Los campos tienen un formato válido. Ingresa el PIN de prueba (6 dígitos) para solicitar la creación de tu cuenta."
-                : "Credenciales correctas. Ingresa tu código PIN de seguridad (6 dígitos) para completar el inicio de sesión."}
+              {`Enviamos un código de seguridad de 6 dígitos a:\n`}
+              <Text style={{ fontWeight: "700", color: colors.accentBlue }}>
+                {email.trim().toLowerCase()}
+              </Text>
+              {`\nIngrésalo a continuación para verificar tu identidad:`}
             </Text>
 
             <TextInput
               style={styles.pinInput}
-              placeholder="123456"
+              placeholder="000000"
               placeholderTextColor={colors.textMuted}
               keyboardType="number-pad"
               maxLength={6}
               value={pinIngresado}
               onChangeText={(t) => {
                 setErrorPin(null);
-                setPinIngresado(t);
+                setPinIngresado(t.replace(/[^0-9]/g, ""));
               }}
               textAlign="center"
               autoFocus={true}
             />
 
             {errorPin && (
-              <Text style={[styles.fieldErrorText, { marginBottom: 12 }]}>
+              <Text style={[styles.fieldErrorText, { marginBottom: 8 }]}>
                 {errorPin}
               </Text>
             )}
+
+            <TouchableOpacity
+              onPress={handleReenviarCodigo}
+              disabled={segundosReenvio > 0 || reenviandoCodigo}
+              activeOpacity={0.7}
+              style={{ marginBottom: 12, paddingVertical: 4 }}
+            >
+              <Text
+                style={{
+                  color:
+                    segundosReenvio > 0
+                      ? colors.textMuted
+                      : colors.accentBlue,
+                  fontSize: 13,
+                  fontWeight: "600",
+                  textAlign: "center",
+                }}
+              >
+                {reenviandoCodigo
+                  ? "Enviando nuevo código…"
+                  : segundosReenvio > 0
+                    ? `Reenviar código en ${segundosReenvio}s`
+                    : "¿No recibiste el correo? Reenviar código"}
+              </Text>
+            </TouchableOpacity>
 
             <View
               style={{

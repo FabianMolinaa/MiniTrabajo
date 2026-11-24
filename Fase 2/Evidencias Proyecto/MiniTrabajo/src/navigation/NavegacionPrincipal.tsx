@@ -10,6 +10,7 @@ import MapaScreen from "../screens/MapaScreen";
 import PublicarScreen from "../screens/PublicarScreen";
 import PerfilScreen from "../screens/PerfilScreen";
 import { colors } from "../theme/colors";
+import { useNotificaciones } from "../hooks/useNotificaciones";
 
 type PestanasPrincipales = {
   Trabajos: undefined;
@@ -20,9 +21,10 @@ type PestanasPrincipales = {
 
 const Tab = createBottomTabNavigator<PestanasPrincipales>();
 
-export default function NavegacionPrincipal() {
+export default function NavegacionPrincipal({ usuarioId }: { usuarioId: string }) {
   const insets = useSafeAreaInsets();
   const [modalVisible, setModalVisible] = useState(false);
+  const notif = useNotificaciones(usuarioId, () => setModalVisible(true));
 
   return (
     <>
@@ -43,7 +45,10 @@ export default function NavegacionPrincipal() {
             <TituloCabecera titulo={route.name} />
           ),
           headerRight: () => (
-            <BotonNotificaciones onPress={() => setModalVisible(true)} />
+            <BotonNotificaciones
+              noLeidas={notif.noLeidas}
+              onPress={() => setModalVisible(true)}
+            />
           ),
         })}
       >
@@ -84,6 +89,13 @@ export default function NavegacionPrincipal() {
       <ModalNotificaciones
         visible={modalVisible}
         onCerrar={() => setModalVisible(false)}
+        notificaciones={notif.notificaciones}
+        noLeidas={notif.noLeidas}
+        cargando={notif.cargando}
+        error={notif.error}
+        onReintentar={() => void notif.recargar()}
+        onMarcarLeida={(id) => void notif.marcarLeida(id)}
+        onMarcarTodas={() => void notif.marcarTodas()}
       />
     </>
   );
