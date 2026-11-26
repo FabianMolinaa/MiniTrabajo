@@ -1,4 +1,5 @@
-import { View, Modal } from "react-native";
+import { View, Modal, Text, TouchableOpacity, ActivityIndicator } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 import PagoWebpay from "../components/PagoWebpay";
 import HistorialCompras from "../components/HistorialCompras";
 import EstadoListaRemota from "../components/EstadoListaRemota";
@@ -164,6 +165,27 @@ export default function PerfilScreen() {
         >
           {null}
         </EstadoListaRemota>
+        <TouchableOpacity
+          activeOpacity={0.8}
+          style={[
+            styles.logoutButton,
+            { marginTop: 24, marginHorizontal: 24 },
+            cerrandoSesion && { opacity: 0.6 },
+          ]}
+          onPress={() => void handleCerrarSesion()}
+          disabled={cerrandoSesion}
+          accessibilityRole="button"
+          accessibilityLabel={cerrandoSesion ? "Cerrando sesión" : "Cerrar sesión"}
+        >
+          {cerrandoSesion ? (
+            <ActivityIndicator size="small" color="#ef4444" />
+          ) : (
+            <Ionicons name="log-out-outline" size={18} color="#ef4444" />
+          )}
+          <Text style={styles.logoutText}>
+            {cerrandoSesion ? "Cerrando sesión…" : "Cerrar sesión"}
+          </Text>
+        </TouchableOpacity>
       </View>
     );
   }

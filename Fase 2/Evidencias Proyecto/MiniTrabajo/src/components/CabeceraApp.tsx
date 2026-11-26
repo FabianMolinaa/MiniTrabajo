@@ -2,6 +2,7 @@ import { View, Text, TouchableOpacity } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { colors } from "../theme/colors";
 import { styles } from "../styles/AppStyles";
+import { notifStyles } from "../styles/NotificacionesStyles";
 
 export function TituloCabecera({ titulo }: { titulo: string }) {
   return (
@@ -14,7 +15,13 @@ export function TituloCabecera({ titulo }: { titulo: string }) {
   );
 }
 
-export function BotonNotificaciones({ onPress }: { onPress: () => void }) {
+export function BotonNotificaciones({
+  onPress,
+  noLeidas = 0,
+}: {
+  onPress: () => void;
+  noLeidas?: number;
+}) {
   return (
     <TouchableOpacity
       activeOpacity={0.7}
@@ -26,7 +33,13 @@ export function BotonNotificaciones({ onPress }: { onPress: () => void }) {
         size={20}
         color={colors.textPrimary}
       />
-      <View style={styles.notifBadge} />
+      {noLeidas > 0 && (
+        <View style={notifStyles.badgeContador}>
+          <Text style={notifStyles.badgeTexto}>
+            {noLeidas > 9 ? "9+" : noLeidas}
+          </Text>
+        </View>
+      )}
     </TouchableOpacity>
   );
 }

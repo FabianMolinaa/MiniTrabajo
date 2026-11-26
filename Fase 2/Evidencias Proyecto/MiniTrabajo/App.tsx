@@ -42,7 +42,11 @@ export default function App() {
       <StatusBar style="light" />
       <FiltrosProvider key={session?.user?.id ?? "sin-sesion"}>
         <NavigationContainer theme={MyDarkTheme}>
-        {session && session.user ? <NavegacionPrincipal /> : <AuthScreen />}
+        {session && session.user ? (
+          <NavegacionPrincipal usuarioId={session.user.id} />
+        ) : (
+          <AuthScreen />
+        )}
         </NavigationContainer>
       </FiltrosProvider>
     </SafeAreaProvider>
